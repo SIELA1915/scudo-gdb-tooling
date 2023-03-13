@@ -5,7 +5,7 @@ import enum
 class ScudoChunk:
     """Scudo chunk class. The default behavior (from_base=False) is to interpret the data starting at the memory
     address pointed to as the chunk data. Setting from_base to True instead treats that data as the chunk header.
-    Ref:  https://sploitfun.wordpress.com/2015/02/10/understanding-glibc-malloc/."""
+    Ref:  https://un1fuzz.github.io/articles, https://llvm.org/docs/ScudoHardenedAllocator.html"""
 
     class ChunkState(enum.Enum):
         Available = 0
@@ -145,7 +145,7 @@ class ScudoHeapCommand(GenericCommand):
 @register
 class ScudoHeapChunkCommand(GenericCommand):
     """Display information on a heap chunk.
-    See https://github.com/sploitfun/lsploits/blob/master/glibc/malloc/malloc.c#L1123."""
+    See https://un1fuzz.github.io/articles/scudo_internals.html#a3_2_3."""
 
     _cmdline_ = "scudo chunk"
     _syntax_  = f"{_cmdline_} [-h] [--allow-unaligned] address"
