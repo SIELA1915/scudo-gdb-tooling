@@ -231,6 +231,14 @@ def search_for_scudo_region_info() -> int:
         
     return addr
 
+@lru_cache()
+def search_for_scudo_per_class_array() -> int:
+    """A helper function to find the scudo `PerClassArray` address, either from `Allocator`."""
+
+    addr = parse_address("(void *)&(Allocator.TSDRegistry.ThreadTSD.Cache.PerClassArray)")
+        
+    return addr
+
 
 class ScudoRegionInfo:
     """Scudo region info class"""
@@ -638,6 +646,97 @@ class ScudoTransferBatch:
         ]
         return "\n".join(msg) + "\n"
 
+class ScudoPerClass:
+    """Scudo per class cache"""
+
+    @staticmethod
+    def per_class_t() -> Type[ctypes.Structure]:
+        pointer = ctypes.c_uint64 if gef and gef.arch.ptrsize == 8 else ctypes.c_uint32
+        config = Config()
+        fields = [
+            ("count", ctypes.c_uint16),
+            ("max_count", ctypes.c_uint16),
+            ("class_size", pointer),
+            ("chunks", config.max_num_cached_hint*config.compact_pointer),
+        ]
+
+        class per_class_cls(ctypes.Structure):
+            _fields_ = fields
+        return per_class_cls
+
+    def __init__(self, addr: str) -> None:
+        self.__address : int = parse_address(f"{addr}")
+
+        self.reset()
+        return
+
+    def reset(self):
+        self._sizeof = ctypes.sizeof(ScudoPerClass.per_class_t())
+        self._data = gef.memory.read(self.__address, ctypes.sizeof(ScudoPerClass.per_class_t()))
+        self.__per_class = ScudoPerClass.per_class_t().from_buffer_copy(self._data)
+        return
+
+    def __abs__(self) -> int:
+        return self.__address
+
+    def __int__(self) -> int:
+        return self.__address
+
+    @property
+    def address(self) -> int:
+        return self.__address
+
+    @property
+    def sizeof(self) -> int:
+        return self._sizeof
+
+    @property
+    def addr(self) -> int:
+        return int(self)
+
+    @property
+    def count(self) -> int:
+        return self.__per_class.count
+    
+    @property
+    def max_count(self) -> int:
+        return self.__per_class.max_count
+
+    @property
+    def class_size(self) -> int:
+        return self.__per_class.class_size
+
+    @property
+    def chunks(self) -> [int]:
+        return self.__per_class.chunks
+
+    def __str__(self) -> str:
+        properties = f"base={self.__address:#x}, count={self.count:d}"
+        return (f"{Color.colorify('PerClass', 'blue bold underline')}({properties})")
+
+    def __repr__(self) -> str:
+        return f"PerClass(address={self.__address:#x}, size={self._sizeof})"
+
+    def __str_extended(self) -> str:
+        msg = []
+
+        msg.append("Number chunks: {0:d}".format(self.count))
+        msg.append("Maximal number chunks: {0:d}".format(self.max_count))
+        msg.append("Class size: {0:d}".format(self.class_size))
+
+        for _i in range(self.count):
+            msg.append("\tChunk #{0:d}: {1:#x}".format(_i, self.chunks[_i]))
+
+        return "\n".join(msg)
+
+        
+    def psprint(self) -> str:
+        msg = [
+            str(self),
+            self.__str_extended(),
+        ]
+        return "\n".join(msg) + "\n"
+
 
 
 @register
@@ -862,4 +961,29 @@ class ScudoTransferBatchCommand(GenericCommand):
                 current_tb = next_tb
         else:
             gef_print(current_tb.psprint())
+        return
+
+@register
+class ScudoPerClassCommand(GenericCommand):
+    """Display information on a per class structure.
+    See TODO."""
+
+    _cmdline_ = "scudo perclass"
+    _syntax_  = f"{_cmdline_} [-h] index"
+
+    def __init__(self) -> None:
+        super().__init__(complete=gdb.COMPLETE_LOCATION)
+        return
+
+    @parse_arguments({"index": 0}, {})
+    @only_if_gdb_running
+    def do_invoke(self, _: List[str], **kwargs: Any) -> None:
+        args : argparse.Namespace = kwargs["arguments"]
+        
+        per_class_addr = parse_address(f"{search_for_scudo_per_class_array()}+{ctypes.sizeof(ScudoPerClass.per_class_t())*args.index}")
+
+        per_class = ScudoPerClass(f"{per_class_addr:#x}")
+
+        gef_print(per_class.psprint())
+
         return
