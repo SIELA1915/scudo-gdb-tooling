@@ -233,9 +233,17 @@ def search_for_scudo_region_info() -> int:
 
 @lru_cache()
 def search_for_scudo_per_class_array() -> int:
-    """A helper function to find the scudo `PerClassArray` address, either from `Allocator`."""
+    """A helper function to find the scudo `PerClassArray` address, from `Allocator`."""
 
     addr = parse_address("(void *)&(Allocator.TSDRegistry.ThreadTSD.Cache.PerClassArray)")
+        
+    return addr
+
+@lru_cache()
+def search_for_scudo_large_block() -> int:
+    """A helper function to find the scudo `LargeBlock` address of the first element of the linked list of used blocks from `Allocator`."""
+
+    addr = parse_address("Allocator.Secondary.InUseBlocks.First")
         
     return addr
 
@@ -657,12 +665,19 @@ class ScudoPerClass:
             ("count", ctypes.c_uint16),
             ("max_count", ctypes.c_uint16),
             ("class_size", pointer),
-            ("chunks", config.max_num_cached_hint*config.compact_pointer),
+            ("chunks", 2*config.max_num_cached_hint*config.compact_pointer),
         ]
 
         class per_class_cls(ctypes.Structure):
             _fields_ = fields
         return per_class_cls
+
+    @staticmethod
+    def array_size_offset() -> int:
+        class_size = ctypes.sizeof(ScudoPerClass.per_class_t())
+
+
+        return SCUDO_CACHE_LINE_SIZE * math.ceil(class_size / SCUDO_CACHE_LINE_SIZE)
 
     def __init__(self, addr: str) -> None:
         self.__address : int = parse_address(f"{addr}")
@@ -737,6 +752,139 @@ class ScudoPerClass:
         ]
         return "\n".join(msg) + "\n"
 
+class ScudoLargeBlock:
+    """Scudo large block class"""
+
+    @staticmethod
+    def large_block_t() -> Type[ctypes.Structure]:
+        pointer = ctypes.c_uint64 if gef and gef.arch.ptrsize == 8 else ctypes.c_uint32
+        fields = [
+            ("prev", pointer),
+            ("next", pointer),
+            ("commit_base", pointer),
+            ("commit_size", pointer),
+            ("map_base", pointer),
+            ("map_size", pointer),
+            ("data", ctypes.c_uint8),
+        ]
+
+        class large_block_cls(ctypes.Structure):
+            _fields_ = fields
+        return large_block_cls
+
+    def __init__(self, addr: str) -> None:
+        self.__address : int = parse_address(f"{addr}")
+
+        self.reset()
+        return
+
+    def reset(self):
+        self._sizeof = ctypes.sizeof(ScudoLargeBlock.large_block_t())
+        self._data = gef.memory.read(self.__address, ctypes.sizeof(ScudoLargeBlock.large_block_t()))
+        self.__large_block = ScudoLargeBlock.large_block_t().from_buffer_copy(self._data)
+        return
+
+    def __abs__(self) -> int:
+        return self.__address
+
+    def __int__(self) -> int:
+        return self.__address
+
+    @property
+    def address(self) -> int:
+        return self.__address
+
+    @property
+    def sizeof(self) -> int:
+        return self._sizeof
+
+    @property
+    def addr(self) -> int:
+        return int(self)
+
+    @property
+    def commit_base(self) -> int:
+        return self.__large_block.commit_base
+
+    @property
+    def commit_size(self) -> int:
+        return self.__large_block.commit_size
+
+    @property
+    def map_base(self) -> int:
+        return self.__large_block.map_base
+    
+    @property
+    def map_size(self) -> int:
+        return self.__large_block.map_size
+
+    @property
+    def data(self) -> int:
+        return self.__large_block.data
+
+    @property
+    def next_addr(self) -> int:
+        return self.__large_block.next
+
+    def get_next_large_block(self) -> "ScudoLargeBlock":
+        addr = self.next_addr
+        return ScudoLargeBlock(addr)
+
+    @property
+    def prev_addr(self) -> int:
+        return self.__large_block.prev
+
+    def get_prev_large_block(self) -> "ScudoLargeBlock":
+        addr = self.prev_addr
+        return ScudoLargeBlock(addr)
+    
+    def __iter__(self) -> Generator["ScudoLargeBlock", None, None]:
+        current_block = self
+
+        while current_block.next_addr:
+            yield current_block
+
+            next_block_addr = current_block.next_addr()
+
+            if not Address(value=next_block_addr).valid:
+                break
+
+            next_block = current_block.get_next_large_block()
+            if next_block is None:
+                break
+            current_block = next_block
+        return
+
+    def __str__(self) -> str:
+        properties = f"base={self.__address:#x}, next={self.next_addr:#x}"
+        return (f"{Color.colorify('LargeBlock', 'blue bold underline')}({properties})")
+
+    def __repr__(self) -> str:
+        return f"LargeBlock(address={self.__address:#x}, size={self._sizeof})"
+
+    def __str_extended(self) -> str:
+        msg = []
+
+        msg.append("Next large block: {0:#x}".format(self.next_addr))
+        msg.append("Previous large block: {0:#x}".format(self.prev_addr))
+
+        msg.append("Commit base: {0:#x}".format(self.commit_base))
+        msg.append("Commit size: {0:d}".format(self.commit_size))
+
+        msg.append("Map base: {0:#x}".format(self.map_base))
+        msg.append("Map size: {0:d}".format(self.map_size))
+
+        return "\n".join(msg)
+
+        
+    def psprint(self) -> str:
+        msg = [
+            str(self),
+            self.__str_extended(),
+        ]
+        return "\n".join(msg) + "\n"
+
+
 
 
 @register
@@ -744,7 +892,7 @@ class ScudoHeapCommand(GenericCommand):
     """Base command to get information about the Scudo heap structure."""
 
     _cmdline_ = "scudo"
-    _syntax_  = f"{_cmdline_} (chunk|regions|region|batchgroup)"
+    _syntax_  = f"{_cmdline_} (chunk|regions|region|batchgroup|transferbatch|perclass|largeblock)"
 
     def __init__(self) -> None:
         super().__init__(prefix=True)
@@ -863,7 +1011,7 @@ class ScudoHeapRegionCommand(GenericCommand):
             index = 0
             size = (config.min_alignment * math.ceil(args.size / config.min_alignment)) + (config.min_alignment * math.ceil(ctypes.sizeof(ScudoChunk.malloc_chunk_t()) / config.min_alignment))
             while index < config.num_classes:
-                gef_print(f"{index}    {config.class_size_list[index]}")
+#                gef_print(f"{index}    {config.class_size_list[index]}")
                 if size <= config.class_size_list[index]:
                     break
                 index += 1
@@ -980,10 +1128,54 @@ class ScudoPerClassCommand(GenericCommand):
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
         args : argparse.Namespace = kwargs["arguments"]
         
-        per_class_addr = parse_address(f"{search_for_scudo_per_class_array()}+{ctypes.sizeof(ScudoPerClass.per_class_t())*args.index}")
+        per_class_addr = parse_address(f"{search_for_scudo_per_class_array()}+{ScudoPerClass.array_size_offset()*args.index}")
 
         per_class = ScudoPerClass(f"{per_class_addr:#x}")
 
         gef_print(per_class.psprint())
 
+        return
+
+@register
+class ScudoLargeBlockCommand(GenericCommand):
+    """Display information on a large block.
+    See TODO."""
+
+    _cmdline_ = "scudo largeblock"
+    _syntax_  = f"{_cmdline_} [-h] [--number] [address]"
+
+    def __init__(self) -> None:
+        super().__init__(complete=gdb.COMPLETE_LOCATION)
+        return
+
+    @parse_arguments({"address": ""}, {"--number": 1})
+    @only_if_gdb_running
+    def do_invoke(self, _: List[str], **kwargs: Any) -> None:
+        args : argparse.Namespace = kwargs["arguments"]
+        
+        addr = None
+        if not args.address:
+            addr = search_for_scudo_large_block()
+        else:
+            addr = parse_address(args.address)
+            
+        current_block = ScudoLargeBlock(addr)
+
+        if args.number > 1:
+            for _i in range(args.number):
+                if current_block.sizeof == 0:
+                    break
+
+                gef_print(str(current_block))
+                next_block_addr = current_block.next_addr
+                if not Address(value=next_block_addr).valid:
+                    break
+
+                next_block = current_block.get_next_large_block()
+                if next_block is None:
+                    break
+
+                current_block = next_block
+        else:
+            gef_print(current_block.psprint())
         return
