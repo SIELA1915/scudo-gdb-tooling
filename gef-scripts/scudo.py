@@ -62,46 +62,46 @@ class Config(metaclass=Singleton):
                     self.class_size_list += [T + (T >> S) * (cid & M) + size_delta]
 
             else:
-                try:
-                    gdb.parse_and_eval(f"scudo::AndroidConfig")
-                except gdb.error as e:
-                    if "Cannot look up value of a typedef" in str(e):
-                        min_size_log = 4
-                        mid_size_log = 6 if bit64 else 7
-                        max_size_log = 16
-                        num_bits = 7 if bit64 else 8
-                        self.max_num_cached_hint = 13 if bit64 else 14
-                        max_bytes_cached_log = 13
-                        size_delta = 16
+                # try:
+                #     gdb.parse_and_eval(f"scudo::AndroidConfig")
+                # except gdb.error as e:
+                #     if "Cannot look up value of a typedef" in str(e):
+                min_size_log = 4
+                mid_size_log = 6 if bit64 else 7
+                max_size_log = 16
+                num_bits = 7 if bit64 else 8
+                self.max_num_cached_hint = 13 if bit64 else 14
+                max_bytes_cached_log = 13
+                size_delta = 16
+                
+                self.class_size_list = ([-1, 0x00020, 0x00030, 0x00040, 0x00050,
+                                         0x00060, 0x00070, 0x00090, 0x000b0, 0x000c0,
+                                         0x000e0, 0x00120, 0x00160, 0x001c0, 0x00250,
+                                         0x00320, 0x00450, 0x00670, 0x00830, 0x00a10,
+                                         0x00c30, 0x01010, 0x01210, 0x01bd0, 0x02210,
+                                         0x02d90, 0x03790, 0x04010, 0x04810, 0x05a10,
+                                         0x07310, 0x08210, 0x10010,] if bit64 else
+                                        [-1, 0x00020, 0x00040, 0x00050, 0x00060,
+                                         0x00070, 0x00080, 0x00090, 0x000a0, 0x000b0,
+                                         0x000c0, 0x000e0, 0x000f0, 0x00110, 0x00120,
+                                         0x00130, 0x00150, 0x00160, 0x00170, 0x00190,
+                                         0x001d0, 0x00210, 0x00240, 0x002a0, 0x00330,
+                                         0x00370, 0x003a0, 0x00400, 0x00430, 0x004a0,
+                                         0x00530, 0x00610, 0x00730, 0x00840, 0x00910,
+                                         0x009c0, 0x00a60, 0x00b10, 0x00ca0, 0x00e00,
+                                         0x00fb0, 0x01030, 0x01130, 0x011f0, 0x01490,
+                                         0x01650, 0x01930, 0x02010, 0x02190, 0x02490,
+                                         0x02850, 0x02d50, 0x03010, 0x03210, 0x03c90,
+                                         0x04090, 0x04510, 0x04810, 0x05c10, 0x06f10,
+                                         0x07310, 0x08010, 0x0c010, 0x10010,])
                         
-                        self.class_size_list = ([-1, 0x00020, 0x00030, 0x00040, 0x00050,
-                                            0x00060, 0x00070, 0x00090, 0x000b0, 0x000c0,
-                                            0x000e0, 0x00120, 0x00160, 0x001c0, 0x00250,
-                                            0x00320, 0x00450, 0x00670, 0x00830, 0x00a10,
-                                            0x00c30, 0x01010, 0x01210, 0x01bd0, 0x02210,
-                                            0x02d90, 0x03790, 0x04010, 0x04810, 0x05a10,
-                                            0x07310, 0x08210, 0x10010,] if bit64 else
-                                                [-1, 0x00020, 0x00040, 0x00050, 0x00060,
-                                            0x00070, 0x00080, 0x00090, 0x000a0, 0x000b0,
-                                            0x000c0, 0x000e0, 0x000f0, 0x00110, 0x00120,
-                                            0x00130, 0x00150, 0x00160, 0x00170, 0x00190,
-                                            0x001d0, 0x00210, 0x00240, 0x002a0, 0x00330,
-                                            0x00370, 0x003a0, 0x00400, 0x00430, 0x004a0,
-                                            0x00530, 0x00610, 0x00730, 0x00840, 0x00910,
-                                            0x009c0, 0x00a60, 0x00b10, 0x00ca0, 0x00e00,
-                                            0x00fb0, 0x01030, 0x01130, 0x011f0, 0x01490,
-                                            0x01650, 0x01930, 0x02010, 0x02190, 0x02490,
-                                            0x02850, 0x02d50, 0x03010, 0x03210, 0x03c90,
-                                            0x04090, 0x04510, 0x04810, 0x05c10, 0x06f10,
-                                            0x07310, 0x08010, 0x0c010, 0x10010,])
-                        
-                        self.num_classes = len(self.class_size_list) - 1
-                        self.largest_class_id = self.num_classes - 1
-                        self.batch_class_id = 0
-                        self.max_size = self.class_size_list[-1]
-                        self.compact_pointer = ctypes.c_uint32
-                        if bit64:
-                            self.primary_compact_ptr_scale = self.min_alignment
+                self.num_classes = len(self.class_size_list) - 1
+                self.largest_class_id = self.num_classes - 1
+                self.batch_class_id = 0
+                self.max_size = self.class_size_list[-1]
+                self.compact_pointer = ctypes.c_uint32
+                if bit64:
+                    self.primary_compact_ptr_scale = self.min_alignment
 
 
 def decompact_pointer(class_id, compact_ptr) -> int:
@@ -246,10 +246,16 @@ def search_for_scudo_region_info() -> int:
     return addr
 
 @lru_cache()
-def search_for_scudo_per_class_array() -> int:
+def search_for_scudo_per_class_array(thread_id) -> int:
     """A helper function to find the scudo `PerClassArray` address, from `Allocator`."""
 
-    addr = parse_address("(void *)&(Allocator.TSDRegistry.ThreadTSD.Cache.PerClassArray)")
+    try:
+        addr = parse_address("(void *)&(Allocator.TSDRegistry.ThreadTSD.Cache.PerClassArray)")
+    except gdb.error:
+        stats_addr = parse_address("*(((void**)&Allocator)+8)")
+        for i in range(thread_id+1):
+            stats_addr = parse_address(f"*((void**){stats_addr:#x})")
+        addr = parse_address(f"(void*){stats_addr:#x}-{ScudoPerClass.array_size_offset()*Config().num_classes}")
         
     return addr
 
@@ -257,7 +263,12 @@ def search_for_scudo_per_class_array() -> int:
 def search_for_scudo_large_block() -> int:
     """A helper function to find the scudo `LargeBlock` address of the first element of the linked list of used blocks from `Allocator`."""
 
-    addr = parse_address("Allocator.Secondary.InUseBlocks.First")
+    try:
+        addr = parse_address("Allocator.Secondary.InUseBlocks.First")
+    except gdb.error:
+        addr = parse_address("*(*(((void***)&Allocator)+8)-6)")
+
+        
         
     return addr
 
@@ -1131,18 +1142,18 @@ class ScudoPerClassCommand(GenericCommand):
     See TODO."""
 
     _cmdline_ = "scudo perclass"
-    _syntax_  = f"{_cmdline_} [-h] index"
+    _syntax_  = f"{_cmdline_} [-h] thread_index index"
 
     def __init__(self) -> None:
         super().__init__(complete=gdb.COMPLETE_LOCATION)
         return
 
-    @parse_arguments({"index": 0}, {})
+    @parse_arguments({"thread_index": 0, "index": 0}, {})
     @only_if_gdb_running
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
         args : argparse.Namespace = kwargs["arguments"]
         
-        per_class_addr = parse_address(f"{search_for_scudo_per_class_array()}+{ScudoPerClass.array_size_offset()*args.index}")
+        per_class_addr = parse_address(f"{search_for_scudo_per_class_array(args.thread_index)}+{ScudoPerClass.array_size_offset()*args.index}")
 
         per_class = ScudoPerClass(f"{per_class_addr:#x}")
 
