@@ -1,9 +1,3 @@
-'''
-Scudo gef plugin
-
-Scudo gef plugin for revision 161cca266a9d0b6deb5f1fd2de8ad543649a7fa1 on https://github.com/llvm/llvm-project.git
-'''
-
 import ctypes
 import gdb
 import enum
@@ -76,7 +70,7 @@ class Config(metaclass=Singleton):
                 mid_size_log = 6 if bit64 else 7
                 max_size_log = 16
                 num_bits = 7 if bit64 else 8
-                self.max_num_cached_hint = 14
+                self.max_num_cached_hint = 13 if bit64 else 14
                 max_bytes_cached_log = 13
                 size_delta = 16
                 
@@ -86,9 +80,8 @@ class Config(metaclass=Singleton):
                                          0x00320, 0x00450, 0x00670, 0x00830, 0x00a10,
                                          0x00c30, 0x01010, 0x01210, 0x01bd0, 0x02210,
                                          0x02d90, 0x03790, 0x04010, 0x04810, 0x05a10,
-                                         0x07310, 0x08210, 0x10010, 0x18010, 0x20010,
-                                         0x28010, 0x30010, 0x38010, 0x40010,] if bit64 else
-                                        [-1, 0x00020, 0x00030, 0x00040, 0x00050, 0x00060,
+                                         0x07310, 0x08210, 0x10010,] if bit64 else
+                                        [-1, 0x00020, 0x00040, 0x00050, 0x00060,
                                          0x00070, 0x00080, 0x00090, 0x000a0, 0x000b0,
                                          0x000c0, 0x000e0, 0x000f0, 0x00110, 0x00120,
                                          0x00130, 0x00150, 0x00160, 0x00170, 0x00190,
@@ -102,7 +95,7 @@ class Config(metaclass=Singleton):
                                          0x04090, 0x04510, 0x04810, 0x05c10, 0x06f10,
                                          0x07310, 0x08010, 0x0c010, 0x10010,])
                         
-                self.num_classes = len(self.class_size_list)
+                self.num_classes = len(self.class_size_list) - 1
                 self.largest_class_id = self.num_classes - 1
                 self.batch_class_id = 0
                 self.max_size = self.class_size_list[-1]
@@ -110,7 +103,7 @@ class Config(metaclass=Singleton):
                 if bit64:
                     self.primary_compact_ptr_scale = self.min_alignment
 
-            
+
 def decompact_pointer(class_id, compact_ptr) -> int:
     region_info = ScudoRegionInfo(f"{search_for_scudo_regtion_info()}+{ctypes.sizeof(ScudoRegionInfo.region_info_t())*class_id}")
 
@@ -259,7 +252,7 @@ def search_for_scudo_per_class_array(thread_id) -> int:
     try:
         addr = parse_address("(void *)&(Allocator.TSDRegistry.ThreadTSD.Cache.PerClassArray)")
     except gdb.error:
-        stats_addr = parse_address("*(((void**)&Allocator)+9)")
+        stats_addr = parse_address("*(((void**)&Allocator)+8)")
         for i in range(thread_id+1):
             stats_addr = parse_address(f"*((void**){stats_addr:#x})")
         addr = parse_address(f"(void*){stats_addr:#x}-{ScudoPerClass.array_size_offset()*Config().num_classes}")
@@ -273,7 +266,7 @@ def search_for_scudo_large_block() -> int:
     try:
         addr = parse_address("Allocator.Secondary.InUseBlocks.First")
     except gdb.error:
-        addr = parse_address("*(*(((void***)&Allocator)+9)-6)")
+        addr = parse_address("*(*(((void***)&Allocator)+8)-6)")
 
         
         
@@ -292,12 +285,10 @@ class ScudoRegionInfo:
             ("freelist_size", pointer),
             ("freelist_first", pointer),
             ("freelist_last", pointer),
+            ("region_beg", pointer),
             ("popped_blocks", pointer),
             ("pushed_blocks", pointer),
-            ("can_release", ctypes.c_uint8),
-            ("exhausted", ctypes.c_uint8),
             ("rand_state", ctypes.c_uint32),
-            ("region_beg", pointer),
             ("mapped_user", pointer),
             ("allocated_user", pointer),
             ("data", ctypes.c_uint8),
@@ -305,6 +296,7 @@ class ScudoRegionInfo:
             ("release_ranges", pointer),
             ("release_last_bytes", pointer),
             ("release_last_at_ns", ctypes.c_uint64),
+            ("exhausted", ctypes.c_uint8),
         ]
 
         class unpadded_region_info_cls(ctypes.Structure):
@@ -591,8 +583,8 @@ class ScudoTransferBatch:
         config = Config()
         fields = [
             ("next", pointer),
-            ("count", ctypes.c_uint32),
-            ("batches", config.max_num_cached_hint*pointer),
+            ("batches", config.max_num_cached_hint*config.compact_pointer),
+            ("count", ctypes.c_uint16),
         ]
 
         class transfer_batch_cls(ctypes.Structure):
@@ -676,9 +668,6 @@ class ScudoTransferBatch:
         msg.append("Number batches: {0:d}".format(self.count))
 
         for _i in range(self.count):
-            if len(self.batches) <= _i:
-                msg.append("\t!Invalid length of buffer!")
-                break
             msg.append("\tBatch #{0:d}: {1:#x}".format(_i, self.batches[_i]))
 
         return "\n".join(msg)
@@ -699,10 +688,10 @@ class ScudoPerClass:
         pointer = ctypes.c_uint64 if gef and gef.arch.ptrsize == 8 else ctypes.c_uint32
         config = Config()
         fields = [
-            ("count", ctypes.c_uint32),
-            ("max_count", ctypes.c_uint32),
+            ("count", ctypes.c_uint16),
+            ("max_count", ctypes.c_uint16),
             ("class_size", pointer),
-            ("chunks", 2*config.max_num_cached_hint*pointer),
+            ("chunks", 2*config.max_num_cached_hint*config.compact_pointer),
         ]
 
         class per_class_cls(ctypes.Structure):
@@ -713,7 +702,6 @@ class ScudoPerClass:
     def array_size_offset() -> int:
         class_size = ctypes.sizeof(ScudoPerClass.per_class_t())
 
-        return class_size
 
         return SCUDO_CACHE_LINE_SIZE * math.ceil(class_size / SCUDO_CACHE_LINE_SIZE)
 
@@ -778,9 +766,6 @@ class ScudoPerClass:
         msg.append("Class size: {0:d}".format(self.class_size))
 
         for _i in range(self.count):
-            if len(self.chunks) <= _i:
-                msg.append("\t!Invalid length of buffer!")
-                break
             msg.append("\tChunk #{0:d}: {1:#x}".format(_i, self.chunks[_i]))
 
         return "\n".join(msg)
@@ -802,7 +787,8 @@ class ScudoLargeBlock:
         fields = [
             ("prev", pointer),
             ("next", pointer),
-            ("block_end", pointer),
+            ("commit_base", pointer),
+            ("commit_size", pointer),
             ("map_base", pointer),
             ("map_size", pointer),
             ("data", ctypes.c_uint8),
@@ -843,8 +829,12 @@ class ScudoLargeBlock:
         return int(self)
 
     @property
-    def block_end(self) -> int:
-        return self.__large_block.block_end
+    def commit_base(self) -> int:
+        return self.__large_block.commit_base
+
+    @property
+    def commit_size(self) -> int:
+        return self.__large_block.commit_size
 
     @property
     def map_base(self) -> int:
@@ -904,7 +894,8 @@ class ScudoLargeBlock:
         msg.append("Next large block: {0:#x}".format(self.next_addr))
         msg.append("Previous large block: {0:#x}".format(self.prev_addr))
 
-        msg.append("Block end: {0:#x}".format(self.block_end))
+        msg.append("Commit base: {0:#x}".format(self.commit_base))
+        msg.append("Commit size: {0:d}".format(self.commit_size))
 
         msg.append("Map base: {0:#x}".format(self.map_base))
         msg.append("Map size: {0:d}".format(self.map_size))
@@ -927,7 +918,7 @@ class ScudoHeapCommand(GenericCommand):
     """Base command to get information about the Scudo heap structure."""
 
     _cmdline_ = "scudo"
-    _syntax_  = f"{_cmdline_} (chunk|regions|region|transferbatch|perclass|largeblock)"
+    _syntax_  = f"{_cmdline_} (chunk|regions|region|batchgroup|transferbatch|perclass|largeblock)"
 
     def __init__(self) -> None:
         super().__init__(prefix=True)
@@ -1075,8 +1066,6 @@ class ScudoBatchGroupCommand(GenericCommand):
     @parse_arguments({"address": ""}, {"--number": 1})
     @only_if_gdb_running
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
-        err("Not supported in this version of scudo")
-        return
         args : argparse.Namespace = kwargs["arguments"]
         if not args.address:
             err("Missing batch group address")
