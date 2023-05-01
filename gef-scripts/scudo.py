@@ -1,7 +1,7 @@
 '''
 Scudo gef plugin
 
-Scudo gef plugin for revision 161cca266a9d0b6deb5f1fd2de8ad543649a7fa1 on https://github.com/llvm/llvm-project.git
+Scudo gef plugin for revision 15754acc5985188509f5eefaefa308393759b822 on https://github.com/llvm/llvm-project.git
 '''
 
 import ctypes
