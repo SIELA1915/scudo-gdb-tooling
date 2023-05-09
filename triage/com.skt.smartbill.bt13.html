@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<title>com.skt.smartbill.bt13.html</title>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+
+</head>
+
+<body>
+
+<h1 id="detailed-instructions">Detailed instructions</h1>
+<h2 id="java_com_ubikey_jni_ubikeyjni_jgetuser0"><code>Java_com_ubikey_jni_UbikeyJni_jGetUser@0</code></h2>
+<pre><code>python3 fuzzing/triage.py --target com.skt.smartbill --target_function         Java_com_ubikey_jni_UbikeyJni_jGetUser@0 --debug --device RF8N12BM5VN</code></pre>
+<h3 id="bt13">BT13</h3>
+<pre><code>LD_LIBRARY_PATH=/apex/com.android.art/lib64:$(pwd):$(pwd)/com.skt.smartbill/lib/arm64-v8a:/system/lib64 gdb -iex &#39;set auto-load safe-path .&#39; --args ./harness_debug_nocov com.skt.smartbill memory reproduced_crashes/bt_13/output_R58N349AKNY_17:46-06-03-2023_default_id:000023,sig:06,src:000121,time:14543,execs:3464,op:havoc,rep:4 0 0</code></pre>
+<h4 id="gdb-commands">gdb commands</h4>
+<pre><code>r
+b *Convert_ASN1_to_X509_TBS_CERT+268
+c
+si
+si
+scudo chunk *((void**)($sp+0x10))
+si</code></pre>
+<p>frees unallocated chunk, on <code>$sp+0x10</code> after <code>Get_DER_Child</code>, <code>$sp-0x40</code> at <code>Convert_ASN1_to_X509_TBS_CERT+268</code>.</p>
+<h2 id="decompiled-offending-function-fun_0015ae44">Decompiled offending function <code>FUN_0015ae44</code></h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a>undefined4 FUN_0015ae44(undefined8 param_1,<span class="dt">long</span> **param_2)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a>{</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a>  <span class="dt">int</span> iVar1;</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a>  <span class="dt">long</span> lVar2;</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a>  <span class="dt">long</span> lVar3;</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a>  <span class="dt">long</span> *local_40;</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a>  </span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true"></a>  lVar2 = Get_DER_Child(param_1,<span class="dv">4</span>,<span class="bn">0x10</span>);</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true"></a>  <span class="cf">if</span> (((lVar2 != <span class="dv">0</span>) &amp;&amp; (local_40 = (<span class="dt">long</span> *)FUN_0016054c(), local_40 != (<span class="dt">long</span> *)<span class="bn">0x0</span>)) &amp;&amp;</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true"></a>     (iVar1 = Compute_ASN1_ST_ChildNum(lVar2), iVar1 == <span class="dv">2</span>)) {</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true"></a>    lVar3 = Get_DER_Child(lVar2,<span class="dv">0</span>,<span class="bn">0x17</span>);</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true"></a>    *local_40 = lVar3;</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true"></a>    <span class="cf">if</span> (*local_40 != <span class="dv">0</span>) {</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true"></a>      lVar3 = Get_DER_Child(lVar2,<span class="dv">1</span>,<span class="bn">0x17</span>);</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true"></a>      local_40[<span class="dv">1</span>] = lVar3;</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true"></a>      <span class="cf">if</span> (local_40[<span class="dv">1</span>] != <span class="dv">0</span>) {</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true"></a>        *param_2 = local_40;</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true"></a>        <span class="cf">if</span> (lVar2 != <span class="dv">0</span>) {</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true"></a>          Delete_ASN1(lVar2);</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true"></a>        }</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true"></a>        <span class="cf">return</span> <span class="dv">1</span>;</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true"></a>      }</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true"></a>    }</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true"></a>  }</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true"></a>  <span class="cf">if</span> (local_40 != (<span class="dt">long</span> *)<span class="bn">0x0</span>) {</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true"></a>    FUN_001599d0(local_40);</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true"></a>  }</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true"></a>  <span class="cf">if</span> (lVar2 != <span class="dv">0</span>) {</span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true"></a>    Delete_ASN1(lVar2);</span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true"></a>  }</span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true"></a>  <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true"></a>}</span></code></pre></div>
+<p>lVar2 is null, <code>local_40</code> is not initialized to 0, so <code>FUN_001599d0</code> is executed, which tries to free local_40.</p>
+
+</body>
+</html>

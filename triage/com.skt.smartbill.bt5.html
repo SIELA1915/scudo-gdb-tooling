@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<title>com.skt.smartbill.bt5.html</title>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+
+</head>
+
+<body>
+
+<h1>Detailed instructions</h1>
+
+<h2><code>Java_com_ubikey_jni_UbikeyJni_jGetUser@0</code></h2>
+
+<p><code>
+python3 fuzzing/triage.py --target com.skt.smartbill --target_function Java_com_ubikey_jni_UbikeyJni_jGetUser@0 --debug --device RF8N12BM5VN
+</code></p>
+
+<h3>BT5</h3>
+
+<p><code>
+LD_LIBRARY_PATH=/apex/com.android.art/lib64:$(pwd):$(pwd)/com.skt.smartbill/lib/arm64-v8a:/system/lib64 gdb -iex 'set auto-load safe-path .' --args ./harness_debug_nocov com.skt.smartbill memory reproduced_crashes/bt_5/output_R58MA2XTBEB_18:59-03-03-2023_default_id:000002,sig:11,src:000121,time:7294,execs:1869,op:havoc,rep:2 0 0
+</code></p>
+
+<h4>gdb commands</h4>
+
+<p><code>
+r <br />
+b *Clear_OBJECT_IDENTIFIER+44 <br />
+c <br />
+c <br />
+c <br />
+scudo chunk $x0
+</code></p>
+
+<p>Trying to free <code>0x20656e69766f4206</code> on third break, garbage address</p>
+
+<p>Further analysis:</p>
+
+<p><code>
+r <br />
+b *Convert_ASN1_to_X509_NAME+488 <br />
+c <br />
+scudo chunk $x0
+</code></p>
+
+<p>Trying to <code>Delete_OBJECT_IDENTIFIER</code> that is not allocated.</p>
+
+<p><code>
+r <br />
+b *Convert_ASN1_to_X509_NAME
+c <br />
+ni 23 <br />
+scudo chunk *((void**)($sp+0x28)) <br />
+ni 60
+</code></p>
+
+<h2>Decompiled <code>Convert_ASN1_to_X509_NAME</code></h2>
+
+<p>``` 
+undefined4 Convert<em>ASN1</em>to<em>X509</em>NAME(long param<em>1,long *param</em>2)</p>
+
+<p>{
+  int iVar1;
+  int iVar2;
+  undefined8 uVar3;
+  undefined4 *local<em>60;
+  int local</em>58;
+  long local<em>50;
+  long invalid;
+  long local</em>40;</p>
+
+<p>local<em>40 = 0;
+  invalid = 0;
+  local</em>50 = 0;
+  local<em>60 = (undefined4 *)0x0;
+  if ((param</em>1 != 0) &amp;&amp; (param<em>2 != (long *)0x0)) {
+    if (*param</em>2 == 0) {
+      invalid = Create<em>X509</em>NAME();
+    }
+    else {
+      invalid = <em>param_2;
+    }
+    iVar1 = Compute_ASN1_ST_ChildNum(param_1);
+    if ((iVar1 != 0) &amp;&amp; (invalid != 0)) {
+      local_58 = 0;
+      while( true ) {
+        if (iVar1 &lt;= local_58) {
+          *param_2 = invalid;
+          return 1;
+        }
+        uVar3 = Get_DER_Child(param_1,local_58,0x11);
+        local_40 = Get_DER_Child(uVar3,0,0x10);
+        Delete_ASN1(uVar3);
+        if (((local_40 == 0) || (local_50 = Get_DER_Child(local_40,0,6), local_50 == 0)) ||
+           (local_60 = (undefined4 *)Get_DER_Child(local_40,1,0x20), local_60 == (undefined4 *)0x0))
+        break;
+        Delete_ASN1(local_40);
+        local_40 = 0;
+        iVar2 = Add_X509_NAME_child_OID
+                          (invalid,local_50,</em>local<em>60,*(undefined8 *)(local</em>60 + 2),local<em>60[4],
+                           0xffffffff);
+        if (iVar2 != 1) break;
+        Delete</em>OBJECT<em>IDENTIFIER(local</em>50);
+        Delete<em>ASN1</em>STRING(local<em>60);
+        local</em>58 = local<em>58 + 1;
+      }
+    }
+  }
+  if (local</em>50 != 0) {
+    Delete<em>OBJECT</em>IDENTIFIER(local<em>50);
+  }
+  if (invalid != 0) {
+    Delete</em>X509<em>NAME(invalid);
+  }
+  if (local</em>60 != (undefined4 *)0x0) {
+    Delete<em>ASN1</em>STRING(local<em>60);
+  }
+  if (local</em>40 != 0) {
+    Delete<em>ASN1(local</em>40);
+  }
+  return 0;
+}
+```</p>
+
+<p>while(true) executes twice, end of first loop <code>local_50</code> is freed by <code>Delete_OBJECT_IDENTIFIER</code>, in second iteration <code>local_40 == 0</code>, so the break is called with unchanged <code>local_50</code>, and it tries to free <code>local_50</code> again with <code>Delete_OBJECT_IDENTIFIER</code>.
+Double free!</p>
+
+</body>
+</html>
