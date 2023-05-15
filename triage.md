@@ -146,19 +146,12 @@ LD_LIBRARY_PATH=/apex/com.android.art/lib64:$(pwd):$(pwd)/kr.go.nts.android/lib/
 
 ```
 r
-b *_ZN10ByteString9setBufferEPhl+144
+b *_ZN15ASN1OctetString12extractValueEv+348
 c
-c
-c
-scudo chunk $x0
-scudo chunk $x1
-c
-scudo chunk $x0
-scudo chunk $x1
+
 ```
 
-copying memory first into quarantined area, but throws no error, and on following setbuffer call tries to copy memory into unallocated chunk.
-
+Not too sure what causes the crash, segfault on memory access but what exactly?
 
 
 
@@ -180,11 +173,26 @@ LD_LIBRARY_PATH=/apex/com.android.art/lib64:$(pwd):$(pwd)/heartratemonitor.heart
 
 ```
 r
+b *sub70+184
+b *ll11lll11l+2440
+
+c
+scudo chunk $x21
+
+define csi
+ni
+scudo chunk #$x21
+end
+
+c
+
+csi
+
 b *sub70+476
 c
 ```
 
-Checksum of chunk to be freed is 0.
+Checksum of chunk to be freed is 0. -> Chech file
 
 
 
@@ -323,6 +331,8 @@ scudo chunk $x0
 
 Trying to delete already free string/chunk.
 
+Looks like same crash as first one in `Convert_ASN1_to_X509_NAME`.
+
 
 
 ## `Java_com_ubikey_jni_UbikeyJni_jGetOrgName@0-0`
@@ -338,6 +348,8 @@ LD_LIBRARY_PATH=/apex/com.android.art/lib64:$(pwd):$(pwd)/com.kbankwith.smartban
 ```
 
 Crashes the whole device
+
+Looks like same crash as first one in `Convert_ASN1_to_X509_NAME`.
 
 #### gdb commands
 
@@ -395,6 +407,10 @@ scudo chunk $x0
 ```
 
 Trying to free garbage address `0x20656e69766f4206`.
+
+Looks like same crash as first one in `Convert_ASN1_to_X509_NAME`.
+
+
 
 ### BT12
 
