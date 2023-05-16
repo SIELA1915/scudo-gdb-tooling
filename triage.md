@@ -68,6 +68,7 @@ scudo chunk $x0
 
 Trying to `Delete_OBJECT_IDENTIFIER` that is not allocated.
 
+-> Check dedicated file
 
 ```
 r
@@ -124,7 +125,7 @@ si
 
 frees unallocated chunk, on `$sp+0x10` after `Get_DER_Child`, `$sp-0x40` at `Convert_ASN1_to_X509_TBS_CERT+268`.
 
-
+-> Check dedicated file
 
 
 
@@ -192,7 +193,7 @@ b *sub70+476
 c
 ```
 
-Checksum of chunk to be freed is 0. -> Chech file
+Checksum of chunk to be freed is 0. -> Check dedicated file
 
 
 
@@ -249,7 +250,7 @@ scudo chunk $x1
 
 Trying to copy `0x2e1` bytes of data to garbage address `0x7fedb05e50`
 
-
+-> Check dedicated file
 
 
 # com.samsung.android.samsungpay.gear
@@ -274,6 +275,7 @@ c
 ```
 
 Scudo related? not sure
+-> doesn't finish to upload
 
 
 
@@ -304,6 +306,7 @@ scudo chunk $x0
 
 Trying to free already available/freed chunk
 
+-> Check dedicated file
 
 
 # com.kbankwith.smartbank
