@@ -71,6 +71,21 @@ This section is usually 3-5 pages.
 \chapter{Background}
 %%%%%%%%%%%%%%%%%%%%
 
+Most standard android apps are written in Java, which is the main development
+language for writing android apps. However for more advanced uses there exists
+support for including libraries written in standard C code, called native libraries
+referring to the underlying structure of android which is actually a modified
+version of linux. These native libraries can be used together with Java code,
+allowing C functions to be called from the java part of the code.
+
+The code in these native libraries interacts directly with the underlying linux
+kernel, as any C program on a normal computer would, allocating data on the
+stack and the heap. However while normally on linux computers the heap memory
+allocations are handled by the standard libc malloc allocator, android uses it's
+own allocator since Android 11, called the scudo hardened allocator.
+
+Explain how scudo allocates memory in the primary and secondary allocator.
+
 The background section introduces the necessary background to understand your
 work. This is not necessarily related work but technologies and dependencies
 that must be resolved to understand your design and implementation.
@@ -81,6 +96,8 @@ This section is usually 3-5 pages.
 %%%%%%%%%%%%%%%%
 \chapter{Design}
 %%%%%%%%%%%%%%%%
+
+Explain gdb, gef and gef extra plugins and how they come together/interact.
 
 Introduce and discuss the design decisions that you made during this project.
 Highlight why individual decisions are important and/or necessary. Discuss
@@ -93,6 +110,11 @@ This section is usually 5-10 pages.
 \chapter{Implementation}
 %%%%%%%%%%%%%%%%%%%%%%%%
 
+Explain how the plugin is specifically structured, how the commands, the data
+structures and the constants are defined.
+
+
+
 The implementation covers some of the implementation details of your project.
 This is not intended to be a low level description of every line of code that
 you wrote but covers the implementation aspects of the projects.
@@ -104,6 +126,9 @@ This section is usually 3-5 pages.
 \chapter{Evaluation}
 %%%%%%%%%%%%%%%%%%%%
 
+Give some examples of the crashes analyzed, how the commands of the plugin
+can be used to figure out what's happening.
+
 In the evaluation you convince the reader that your design works as intended.
 Describe the evaluation setup, the designed experiments, and how the
 experiments showcase the individual points you want to prove.
@@ -114,6 +139,8 @@ This section is usually 5-10 pages.
 %%%%%%%%%%%%%%%%%%%%%%
 \chapter{Related Work}
 %%%%%%%%%%%%%%%%%%%%%%
+
+Mention some of the links as provided for the beginning of the project.
 
 The related work section covers closely related work. Here you can highlight
 the related work, how it solved the problem, and why it solved a different
