@@ -23,12 +23,12 @@
 \newcommand{\sysname}{ScudoGEFPlugin\xspace}
 
 \begin{document}
-\maketitle
-\makededication
-\makeacks
+\maketitle{}
+\makededication{}
+\makeacks{}
 
 \begin{abstract}
-  The \sysname tool enables inspection of the heap memory of an android app
+  The \sysname{} tool enables inspection of the heap memory of an android app
   which uses native C libraries.
 
   While there is a lot of existent tooling to debug errors related to heap
@@ -49,7 +49,7 @@ insufficient, what the high-level intuition of your work is, maybe a neat
 design or implementation decision, and key results of your evaluation.
 \end{abstract}
 
-\maketoc
+\maketoc{}
 
 %%%%%%%%%%%%%%%%%%%%%%
 \chapter{Introduction}
@@ -78,11 +78,47 @@ referring to the underlying structure of android which is actually a modified
 version of linux. These native libraries can be used together with Java code,
 allowing C functions to be called from the java part of the code.
 
-The code in these native libraries interacts directly with the underlying linux
-kernel, as any C program on a normal computer would, allocating data on the
-stack and the heap. However while normally on linux computers the heap memory
-allocations are handled by the standard libc malloc allocator, android uses it's
-own allocator since Android 11, called the scudo hardened allocator.
+In C, the memory is divided into three big types that are handled differently.
+There is the data segment, which contains the global and static variables that
+are defined in a program, and the data segment can be further divided into the
+initialized global and static variables, and the uninitialized or initalized to
+zero global and static variables.
+Then there is the stack, which is used for local variables in a function as well
+as for arguments and some additional info about called functions. The size of
+variables on the stack have to be fixed-size and the variables lifetime is limited
+to the scope of the function.
+The third type of memory is the one important for this thesis, the heap memory.
+The heap memory is the most flexible of the three types of memory, as it isn't
+limited to a specific lifetime like the stack and variables on the heap can be
+resized. Heap memory can be allocated by the programmer by calling the $malloc$
+function, and unlike the stack or data segment, it has to be explicitly freed by
+the programmer again, by calling $free$. To resize a variable on the heap, the
+$realloc$ function can be used. Since the variables have to be freed manually,
+the programmer has full control over the lifetime of a variable on the heap, and
+it can be used for variables that are needed outside of the scope of a single
+function. Furthermore the heap has a virtually infinite amount of space, and is
+generally also used for very big memory allocations. However due to this big
+flexibility, the handling of heap memory is also quite error-prone, by forgetting
+to free allocated memory or allocating a chunk of the wrong size of the heap and
+trying to access memory outside the allocated part.
+
+Due to the ability to resize the heap variables and their flexible lifetime, the
+heap can't simply allocate contiguous chunks of memory in the order that variables
+were allocated, as there would have to be a lot of moving when variables were
+resized and there would be a lot of space lost when some chunks in the middle of
+the heap were freed. Instead, there is a lot of bookkeeping done around which
+chunks of memory are allocated, which are free and the heap allocator tries to
+decide in a smart way which chunks to allocate when and where to get as much
+performance as possible.
+
+While the general concepts of these memory types are universal for the C language,
+there are some differences in the concrete implementation, especially of the heap
+allocator. While most linux programs use the more standard libc malloc, which is
+well documented and for which tooling exists to investigate the state of the heap,
+android uses it's own allocator since Android 11, which is called the scudo
+hardened allocator.
+
+
 
 Explain how scudo allocates memory in the primary and secondary allocator.
 
@@ -160,10 +196,10 @@ In the conclusion you repeat the main result and finalize the discussion of
 your project. Mention the core results and why as well as how your system
 advances the status quo.
 
-\cleardoublepage
-\phantomsection
+\cleardoublepage{}
+\phantomsection{}
 \addcontentsline{toc}{chapter}{Bibliography}
-\printbibliography
+\printbibliography{}
 
 % Appendices are optional
 % \appendix
