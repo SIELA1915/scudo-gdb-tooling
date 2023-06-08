@@ -12,6 +12,35 @@
 % Options: MScThesis, BScThesis, MScProject, BScProject
 \usepackage[BScThesis,lablogo]{EPFLreport}
 \usepackage{xspace}
+\usepackage{xcolor}
+\usepackage{listofitems}
+
+\newif\ifreview
+\reviewtrue
+% To remove the reviews seet \reviewfalse
+%\reviewfalse
+
+\definecolor{amber}{rgb}{1.0, 0.75, 0.0}
+\newcounter{ReviewerID}
+\readlist*\annotationcolors{blue, red, orange, green, purple, amber, brown, olive}
+\newcommand{\newreviewer}[2]{%
+	\ifnum \theReviewerID=\annotationcolorslen
+	\setcounter{ReviewerID}{0} % cycle through colors
+	\fi
+	\stepcounter{ReviewerID}%
+	\expandafter\edef\csname bootstrap#1\endcsname{%
+		\expandafter\def\csname #1\endcsname####1{%
+			\ifreview%
+			 {\noexpand\color{\annotationcolors[\theReviewerID]} {\noexpand\bf{\noexpand\fbox{#2}} {\noexpand\it ####1} }}
+			\else%
+			 {}% disable annotations
+			\fi%
+		}%
+	}%
+	\csname bootstrap#1\endcsname%
+}
+
+\newreviewer{philipp}{philipp}
 
 \title{Tooling and Analysis of the Scudo Allocator}
 \author{Elias Valentin Boschung}
@@ -37,19 +66,27 @@
 \makeacks{}
 
 \begin{abstract}
-The \sysname{} tool enables inspection of the heap memory of an android app
-which uses native C libraries.
+\philipp{I've reordered this quite a bit
+I won't rework the introduction as much but make sure you spend some time making 
+clear why: heap corruption is a problem, why we need tooling for it, why we need tooling 
+for Scudo and then how we solve the problem and what our main results are
+}
+Heap related memory corruptions are a major concern.
+To understand the cause and impact of such heap bugs,
+developers and analysts rely on tools that allow them to
+dynamically inspect the state of the heap.
+LLVM's Scudo heap implemeantion is a hardened memory allocator that 
+attempts to prevent exploitation of common heap related bugs.
+Since Android 11, Scudo is used as the main memory allocator for Android apps.
+Due to it's novelty only little documentation exists on how Scudo 
+works internally and no tooling exists to inspect the state of the Scudo heap.
+\philipp{don't use passive voice, just use we}
+In this project we analyze the way Scudo manages the heap and
+develop a tool to analyze the state of the Scudo heap at runtime.
+We implement our tool as an extras plugin into the popular GEF plugin for GDB.
+We demonstrate that we can leverage our tool to triage heap related bugs in 
+Android native libraries running on Android 11.\philipp{ANdroid version of Testphone}
 
-While there is a lot of existent tooling to debug errors related to heap
-memory in C code, it is only for the standard libc allocator. However,
-Android uses its own allocator since Android 11, the scudo hardened
-allocator. Since scudo uses its own structures and way to allocate memory,
-those tools can not be used for debugging android C libraries.
-
-In this project the goal was to analyze the way scudo allocates memory and
-then write some tooling to debug it. The tool developed takes the form of
-an extras plugin into the popular GEF plugin for GDB, which in turn is a
-popular debugger for C programs.
 \end{abstract}
 
 \maketoc{}
@@ -58,38 +95,50 @@ popular debugger for C programs.
 \chapter{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-In some previous projects at the HexHive lab, some fuzzing on android native
-libraries has been done, to try to find crashes that would be very hard to
-find without using fuzzing techniques to find specific inputs that reproducibly
-cause a crash. While the fuzzing was successful and some crashes could be found
-in different apps, the time was not sufficient to investigate each of these
-crashes more in depth.
+\philipp{Add some sentences here that follow the structure of the abstract. 1: 
+Heap bugs important. 2: Need dynamic debugging for the heap to understand these bugs. 
+3: Android uses new and mostly unknown allocator (Scudo, make sure it's spelled 
+consistently)
+And then you can add the text below}
+\philipp{Give a concrete example that heap bugs in Android apps are dangerous and 
+may be exploited: https://www.exploit-db.com/docs/48632}
+\philipp{When first talking about Scudo add a reference to the LLVM Scudo website}
 
-While it was doable to triage the crashes in some categories, like heap related
-crashes, the tools to further investigate such heap related crashes on an
-android device were insufficient. One of the main challenges will therefore be
-to understand the heap allocator used on android devices, scudo, and then to
+The \textit{Androlib} project is an ongoing 
+project at the HexHive lab to fuzz Android native libraries.
+As a result of fuzzing campaigns carried out, \textit{Androlib} has discovered a 
+number of crashes in native libraries.
+While it is doable to triage the crashes in some categories, heap-related
+crashes are difficult to anlyze due to the Scudo allocator, as no tooling 
+to inspect the Scudo heap exists.
+
+The goal of this project is therefore to implement a tool that allows to dynamically 
+inspect the Scudo heap. 
+One of the main challenges is 
+to understand the Scudo allocator internals and then to
 create appropriate tooling to help with the analysing of those crashes.
 While there is a bit of documentation around scudo, there is not really a
-comprehensive overview of all detailed inner workings of scudo, and even less
-tools tailored for debugging crashes related to scudo.
+comprehensive overview of all detailed inner workings of scudo, and no 
+tools tailored for debugging crashes related to Scudo.
 
-The goal of this project is therefore to implement a tool that allows for
-improved convenience when trying to debug scudo-related crashes. Since the
-previous work already set up the results of the fuzzing for debugging with
-gdb and gef, the tool takes the form of a gef-extras plugin, that can be
-easily loaded into gdb with gef and adds some commands for inspecting the
-state of scudo.
+Since \textit{Androlib} uses gdb and gef for it's triaging setup, we implement our tool as a gef-extras plugin, 
+that can be easily loaded into gdb with gef and adds some commands for inspecting the
+Scudo heap.
+ 
+We evaluate our tool by triaging \philipp{XX} heap-related crashes on a real Android 
+device.
+We plan to open source our tool to make it available to the community.
 
 %%%%%%%%%%%%%%%%%%%%
 \chapter{Background}
 %%%%%%%%%%%%%%%%%%%%
 
+\philipp{you can probably remove this   and focus on improving the scudo internals section}
+
 Most standard android apps are written in Java, which is the main development
 language for writing android apps. However, for more advanced uses there exists
-support for including libraries written in standard C code, called native libraries
-referring to the underlying structure of android which is actually a modified
-version of Linux. These native libraries can be used together with Java code,
+support for including libraries written in standard C code, called native libraries. 
+These native libraries can be used together with Java code,
 allowing C functions to be called from the java part of the code.
 
 In C, the memory is divided into three big types that are handled differently.
@@ -115,6 +164,8 @@ generally also used for very big memory allocations. However, due to this big
 flexibility, the handling of heap memory is also quite error-prone, by forgetting
 to free allocated memory or allocating a chunk of the wrong size of the heap and
 trying to access memory outside the allocated part.
+\philipp{Give a concrete example that heap bugs in Android apps are dangerous and 
+may be exploited: https://www.exploit-db.com/docs/48632}
 
 Due to the ability to resize the heap variables and their flexible lifetime, the
 heap cannot simply allocate contiguous chunks of memory in the order that variables
@@ -130,7 +181,7 @@ there are some differences in the concrete implementation, especially of the hea
 allocator. While most Linux programs use the more standard libc malloc, which is
 well documented and for which tooling exists to investigate the state of the heap,
 android uses its own allocator since Android 11, which is called the scudo
-hardened allocator.
+hardened allocator.\philipp{Reference to the LLVM Scudo page}
 
 The \emph{GNU Project Debugger} (GDB), is one of the most popular and powerful
 debuggers currently out there, especialy when it comes to C/C++ code. While
@@ -148,6 +199,8 @@ developers can easily mix and match the extra plugins they need.
 \chapter{Scudo Internals}
 %%%%%%%%%%%%%%%%
 
+\philipp{Add a figure that shows the detailed structure of the header}
+
 The scudo hardened allocator divides the heap allocations it is asked to do into
 two big types of allocations, based on the size of the chunk to be allocated.
 The smaller chunks are handled by the primary allocator inside scudo, which is
@@ -156,6 +209,9 @@ size differences between these smaller chunks. All the big chunks are handled by
 the secondary allocator, which is less optimized, since the most frequent chunks
 are the small ones and thus the primary allocator has a bigger impact on performance
 than the secondary allocator.
+
+\philipp{when you talk about metadata please not where that metadata ends up 
+being stored}
 
 The chunks allocated by both the primary and the secondary allocator are prepended
 by the same header, which holds some information about that chunk. This combined
@@ -177,12 +233,18 @@ and it is checked each time the header is loaded.
 The primary allocator structures the heap into Classes (also named Regions), the
 amount of which depend on the configuration. These classes are identified by a
 ClassId, starting from 0. The first class, with ClassId 0, is however a special
-class, that works differently than the other classes. The other classes have a
+class, that works differently than the other classes. \philipp{that's used for 
+the secondary chunk?, I would just say that the primary class ids start from 1}
+The other classes have a
 given size of the chunks that can be allocated in that class, which increases
 with the ClassId, with the exact numbers depending again on the configuration.
+\philipp{Figure to illustrate primary chunk memory regions and the classes on 
+Android}
 So the chunk that is actually returned by the primary allocator might be bigger
 than what was asked for, but this helps against having to do expensive bookkeeping
 to avoid fragmentation inside the classes.
+\philipp{This section would be greatly improved with figures, here I would add 
+an image to illustrate how the free list in the primary allocator works}
 So when an allocation request is made to scudo, and it is small enough to fit into
 one of the primary allocator regions, then the primary allocator first finds the
 smallest class that still contains chunks big enough for the requested size. It
@@ -227,14 +289,17 @@ For bookkeeping, the secondary allocator simply keeps a doubly linked list of
 all chunks currently in use and keeps track of the details of each allocated
 chunk in a special header that is prepended to the combined header.
 
+\philipp{*optional* talk about quarantine}
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 \chapter{Implementation}
 %%%%%%%%%%%%%%%%%%%%%%%%
 
+\philipp{Great:)}
+
 The structure of the gef-extras plugin is heavily inspired by the existing
 structure of the tooling for the standard libc heap allocator used in most
-Linux systems, which is included in the gef plugin for gdb. The scudo plugin
+Linux systems, which is included in the gef plugin \philipp{cite} for gdb. The scudo plugin
 therefore offers multiple commands for the different structures present in
 scudo. These commands take generally some address to a memory region, and
 create an object by reading out the data from that memory address and parsing
@@ -407,6 +472,12 @@ from the Allocator symbol to be changed.
 \chapter{Evaluation}
 %%%%%%%%%%%%%%%%%%%%
 
+\philipp{Add a sentence here explaining what you want to show when evaluating 
+your tool.}
+
+\section{Real Device}
+\philipp{Find better title}
+
 During the main development process the plugin was tested with the standalone
 version of scudo compiled with debug symbols from the llvm repository. In
 order to get the plugin loaded by gef, the folder containing the plugin file
@@ -431,6 +502,7 @@ busid shown in the first command for the android phone:
 usbipd wsl list
 usbipd wsl attach --busid X-X
 \end{verbatim}
+\philipp{I would omit the WSL specific stuff}
 
 While the plugin installation and loading worked without problem on the phone, it
 rapidly became evident that the plugin did not work as intended and instead
@@ -442,19 +514,24 @@ copied and adapted into a version for Android 11, which notably does not
 contain the batch groups, as well as differing in some minor changes in
 different structures.
 
+\section{Crash Triage}
+
 In order to evaluate the actual functioning of the plugin, it was tested with
-some of the crashes provided by the supervisor. The starting of the corresponding
+some of the crashes found in the \textit{Androlib} fuzzing campaign. 
+The starting of the corresponding
 apps and causing the crashes was already set up automatically, opening gdb
 before starting to run the program in order to allow for the setting of any
 breakpoints if needed.
 
-\section{Smartbill Backtrace 5}
+\subsection{Smartbill Backtrace 5}
 
 One of the crashes analyzed to test if the plugin could be used for real
 debugging work was in the app \verb|com.skt.smartbill|, the backtrace numbered
 BT5 in the provided documents. In order to analyze the crash, the first thing
 done was to just let the whole crash run in order to get a backtrace of what
 had caused the crash, which looked like this (shortened for readability):
+
+\philipp{Enclose the code in a figure}
 
 \begin{verbatim}
 abort  from libc.so
@@ -473,6 +550,8 @@ Java_com_ubikey_jni_UbikeyJni_jGetUser  from libUbikeyJni.so
 main  at harness_debug.cpp:247
 \end{verbatim}
 
+\philipp{show conretely how you use your plugin's commands to analyze the crashes, 
+alsow with screenshots}
 So from the backtrace the goal was to move back in the stack trace trying to
 pinpoint the error. Therefore the next step was to set a breakpoint somewhere
 in \verb|Clear_OBJECT_IDENTIFIER|, so to find out where in the function the
@@ -513,6 +592,10 @@ crash.
 \chapter{Related Work}
 %%%%%%%%%%%%%%%%%%%%%%
 
+\philipp{since we're running a bit short on time I would not invest any work here 
+and just cut this chapter, focus on making the other chapters better.
+}
+
 Mention some of the links as provided for the beginning of the project.
 
 The related work section covers closely related work. Here you can highlight
@@ -529,12 +612,14 @@ This section is usually 3–5 pages.
 \chapter{Conclusion}
 %%%%%%%%%%%%%%%%%%%%
 
+\philipp{Add a sentence like: In this project we implemented a plugin ... }
 The plugin works on real Android phones as well as on the standalone scudo
 version and it can easily be loaded inside gef. The commands of the plugin
 allow the inspection of the most important structures of scudo, which can
 be used in investigating real crashes. While the source code of scudo was
-already openly accessible and there were some (though quite few) documentations
-about scudo, there was no easy way to investigate crashes related to scudo on
+already openly accessible and there is a bit of documentation
+about scudo, there was no easy way to investigate crashes \philipp{dynamically \& on real phone} 
+related to scudo on
 real Android apps with native libraries. While the plugin handles the most
 important structures, it also builds a base which could be extended to
 analyze further structures used by scudo, like quarantine related ones.
