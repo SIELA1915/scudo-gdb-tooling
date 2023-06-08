@@ -24,7 +24,16 @@
 
 \begin{document}
 \maketitle{}
+\dedication{Dedicated to my study companion since Covid-19, my plush bear.}
 \makededication{}
+\acknowledgments{I thank first and foremost my family for their uncoditional
+  support throughout all of my studies until this point. I also thank my
+  supervisor Philipp for all the tips and the help in writing this project.
+  Thanks to my friends, those who inspired and encouraged me on the path of
+  cyber security, as well as those who helped me relax when I was stressed.
+  Thanks also to the HexHive lab for the opportunity to do this Bachelor
+  Project, and also for providing the template for this report, which is
+  available at \url{https://github.com/hexhive/thesis_template}.}
 \makeacks{}
 
 \begin{abstract}
@@ -41,13 +50,6 @@ In this project the goal was to analyze the way scudo allocates memory and
 then write some tooling to debug it. The tool developed takes the form of
 an extras plugin into the popular GEF plugin for GDB, which in turn is a
 popular debugger for C programs.
-
-
-The abstract serves as an executive summary of your project.
-Your abstract should cover at least the following topics, 1–2 sentences for
-each: what area you are in, the problem you focus on, why existing work is
-insufficient, what the high-level intuition of your work is, maybe a neat
-design or implementation decision, and key results of your evaluation.
 \end{abstract}
 
 \maketoc{}
@@ -56,17 +58,28 @@ design or implementation decision, and key results of your evaluation.
 \chapter{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-The introduction is a longer write-up that gently eases the reader into your
-thesis~\cite{dinesh20oakland}. Use the first paragraph to discuss the setting.
-In the second paragraph you can introduce the main challenge that you see.
-The third paragraph lists why related work is insufficient.
-The fourth and fifth paragraphs discuss your approach and why it is needed.
-The sixth paragraph will introduce your thesis statement. Think how you can
-distill the essence of your thesis into a single sentence.
-The seventh paragraph will highlight some of your results
-The eighth paragraph discusses your core contribution.
+In some previous projects at the HexHive lab, some fuzzing on android native
+libraries has been done, to try to find crashes that would be very hard to
+find without using fuzzing techniques to find specific inputs that reproducibly
+cause a crash. While the fuzzing was successful and some crashes could be found
+in different apps, the time was not sufficient to investigate each of these
+crashes more in depth.
 
-This section is usually 3–5 pages.
+While it was doable to triage the crashes in some categories, like heap related
+crashes, the tools to further investigate such heap related crashes on an
+android device were insufficient. One of the main challenges will therefore be
+to understand the heap allocator used on android devices, scudo, and then to
+create appropriate tooling to help with the analysing of those crashes.
+While there is a bit of documentation around scudo, there is not really a
+comprehensive overview of all detailed inner workings of scudo, and even less
+tools tailored for debugging crashes related to scudo.
+
+The goal of this project is therefore to implement a tool that allows for
+improved convenience when trying to debug scudo-related crashes. Since the
+previous work already set up the results of the fuzzing for debugging with
+gdb and gef, the tool takes the form of a gef-extras plugin, that can be
+easily loaded into gdb with gef and adds some commands for inspecting the
+state of scudo.
 
 %%%%%%%%%%%%%%%%%%%%
 \chapter{Background}
@@ -119,7 +132,16 @@ well documented and for which tooling exists to investigate the state of the hea
 android uses its own allocator since Android 11, which is called the scudo
 hardened allocator.
 
-Explain gdb, gef and gef extra plugins and how they come together/interact.
+The \emph{GNU Project Debugger} (GDB), is one of the most popular and powerful
+debuggers currently out there, especialy when it comes to C/C++ code. While
+already a very powerful tool on its own, it can be further enhanced with
+plugins using the python API.\@One of these plugins is \emph{GDB Enhanced Features}
+(GEF), which adds more commands and features to GDB, especially popular with
+exploit developers, reverse engineers and also \emph{Capture the Flag} (CTF)
+players. GEF itself has its own plugin system as well, using which it distributes
+some more optional features under the name of gef-extras. Using the system of
+these gef plugins, adding new commands to the gdb console is fairly simple and
+developers can easily mix and match the extra plugins they need.
 
 
 %%%%%%%%%%%%%%%%
@@ -420,16 +442,71 @@ copied and adapted into a version for Android 11, which notably does not
 contain the batch groups, as well as differing in some minor changes in
 different structures.
 
+In order to evaluate the actual functioning of the plugin, it was tested with
+some of the crashes provided by the supervisor. The starting of the corresponding
+apps and causing the crashes was already set up automatically, opening gdb
+before starting to run the program in order to allow for the setting of any
+breakpoints if needed.
 
+\section{Smartbill Backtrace 5}
 
-Give some examples of the crashes analyzed, how the commands of the plugin
-can be used to figure out what is happening.
+One of the crashes analyzed to test if the plugin could be used for real
+debugging work was in the app \verb|com.skt.smartbill|, the backtrace numbered
+BT5 in the provided documents. In order to analyze the crash, the first thing
+done was to just let the whole crash run in order to get a backtrace of what
+had caused the crash, which looked like this (shortened for readability):
 
-In the evaluation you convince the reader that your design works as intended.
-Describe the evaluation setup, the designed experiments, and how the
-experiments showcase the individual points you want to prove.
+\begin{verbatim}
+abort  from libc.so
+scudo::die () from libc.so
+scudo::ScopedErrorReport::~ScopedErrorReport () from libc.so
+scudo::reportMisalignedPointer () from libc.so
+scudo::Allocator<scudo::AndroidConfig, &>::deallocate () from libc.so
+Clear_OBJECT_IDENTIFIER  from libUbikeyJni.so
+Delete_OBJECT_IDENTIFIER  from libUbikeyJni.so
+Convert_ASN1_to_X509_NAME  from libUbikeyJni.so
+??  from libUbikeyJni.so
+Convert_ASN1_to_X509_TBS_CERT  from libUbikeyJni.so
+Convert_ASN1_to_X509_CERT  from libUbikeyJni.so
+CERT_Load  from libUbikeyJni.so
+Java_com_ubikey_jni_UbikeyJni_jGetUser  from libUbikeyJni.so
+main  at harness_debug.cpp:247
+\end{verbatim}
 
-This section is usually 5–10 pages.
+So from the backtrace the goal was to move back in the stack trace trying to
+pinpoint the error. Therefore the next step was to set a breakpoint somewhere
+in \verb|Clear_OBJECT_IDENTIFIER|, so to find out where in the function the
+crash happened, the frame can be moved up with \verb|f 5| to go to the frame
+of \verb|Clear_OBJECT_IDENTIFIER|. Then using \verb|x/10i $pc-0x10|, the
+context around where the crash happened can be discovered, and gdb helpfully
+shows the line offset from the start of the function, in this case 44.
+Therefore, when restarting the crash again, we now set a breakpoint with
+\verb|b *Clear_OBJECT_IDENTIFIER+44|, and then continue running the program
+with \verb|c|. While this now lets us stop right before the problematic call
+to \verb|free()|, the inconvient is that there are plenty of other calls to
+\verb|Clear_OBJECT_IDENTIFIER| before the one causing the crash. However, by
+using the plugin to inspect the chunk that is about to be freed with
+\verb|scudo chunk $x0|, it is very easily visible that at the first two breaks,
+the chunks passed to free are correctly allocated. Once the execution arrives
+at the third break though, the address passed to free is a garbage address,
+that is not even valid.
+While this could also have been identified without the plugin, by going even
+higher in the backtrace stack, we arrive in the \verb|Convert_ASN1_to_X509_NAME|
+function at offset 488, where we can see with the plugin that we are trying
+to call \verb|Delete_OBJECT_IDENTIFIER| with a chunk that is not allocated.
+So from that point why we already found the reason for the crash, we can
+finalize our investigation by looking at the \verb|disassemble| of that
+function. With some investigation we can figure out where on the stack the
+address of the chunk we're trying to free comes from. So we can restart the
+crash again, this time breaking at the start of \verb|Convert_ASN1_to_X509_NAME|
+and by stepping through the lines of the program while observing the stack,
+we can see with the plugin that the chunk is allocated at some point, but
+that it gets freed before we try to free it again. So the crash is clearly
+a classic double free error, which can also be confirmed by decompiling the
+whole library with Ghidra, where we can see that the object is deleted, but
+the pointer is not set to \verb|NULL|, but the later code checks if the
+pointer is null, and otherwise frees it again, resulting in this double free
+crash.
 
 
 %%%%%%%%%%%%%%%%%%%%%%
@@ -452,9 +529,15 @@ This section is usually 3–5 pages.
 \chapter{Conclusion}
 %%%%%%%%%%%%%%%%%%%%
 
-In the conclusion you repeat the main result and finalize the discussion of
-your project. Mention the core results and why as well as how your system
-advances the status quo.
+The plugin works on real Android phones as well as on the standalone scudo
+version and it can easily be loaded inside gef. The commands of the plugin
+allow the inspection of the most important structures of scudo, which can
+be used in investigating real crashes. While the source code of scudo was
+already openly accessible and there were some (though quite few) documentations
+about scudo, there was no easy way to investigate crashes related to scudo on
+real Android apps with native libraries. While the plugin handles the most
+important structures, it also builds a base which could be extended to
+analyze further structures used by scudo, like quarantine related ones.
 
 \cleardoublepage{}
 \phantomsection{}
