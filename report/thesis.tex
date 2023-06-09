@@ -67,11 +67,6 @@
 \makeacks{}
 
 \begin{abstract}
-\philipp{I've reordered this quite a bit
-I won't rework the introduction as much but make sure you spend some time making 
-clear why: heap corruption is a problem, why we need tooling for it, why we need tooling 
-for Scudo and then how we solve the problem and what our main results are
-}
 Heap related memory corruptions are a major concern.
 To understand the cause and impact of such heap bugs,
 developers and analysts rely on tools that allow them to
@@ -81,12 +76,11 @@ attempts to prevent exploitation of common heap related bugs.
 Since Android 11, Scudo is used as the main memory allocator for Android apps.
 Due to it's novelty only little documentation exists on how Scudo 
 works internally and no tooling exists to inspect the state of the Scudo heap.
-\philipp{don't use passive voice, just use we}
 In this project we analyze the way Scudo manages the heap and
 develop a tool to analyze the state of the Scudo heap at runtime.
 We implement our tool as an extras plugin into the popular GEF plugin for GDB.
 We demonstrate that we can leverage our tool to triage heap related bugs in 
-Android native libraries running on Android 11.\philipp{ANdroid version of Testphone}
+Android native libraries running on Android 11 (Security patch level 1 January 2021).
 
 \end{abstract}
 
@@ -156,75 +150,9 @@ Since \textit{Androlib} uses gdb and gef for it's triaging setup, we implement o
 that can be easily loaded into gdb with gef and adds some commands for inspecting the
 Scudo heap.
  
-We evaluate our tool by triaging \philipp{XX} heap-related crashes on a real Android 
+We evaluate our tool by triaging three heap-related crashes on a real Android 
 device.
 We plan to open source our tool to make it available to the community.
-
-%%%%%%%%%%%%%%%%%%%%
-\chapter{Background}
-%%%%%%%%%%%%%%%%%%%%
-
-\philipp{you can probably remove this   and focus on improving the Scudo internals section}
-
-Most standard android apps are written in Java, which is the main development
-language for writing android apps. However, for more advanced uses there exists
-support for including libraries written in standard C code, called native libraries. 
-These native libraries can be used together with Java code,
-allowing C functions to be called from the java part of the code.
-
-In C, the memory is divided into three big types that are handled differently.
-There is the data segment, which contains the global and static variables that
-are defined in a program, and the data segment can be further divided into the
-initialized global and static variables, and the uninitialized or initialized to
-zero global and static variables.
-Then there is the stack, which is used for local variables in a function as well
-as for arguments and some additional info about called functions. The size of
-variables on the stack have to be fixed-size and the variable's lifetime is
-limited to the scope of the function.
-The third type of memory is the one important for this thesis, the heap memory.
-The heap memory is the most flexible of the three types of memory, as it is not
-limited to a specific lifetime like the stack and variables on the heap can be
-resized. Heap memory can be allocated by the programmer by calling the \verb|malloc|
-function, and unlike the stack or data segment, it has to be explicitly freed by
-the programmer again, by calling \verb|free|. To resize a variable on the heap, the
-\verb|realloc| function can be used. Since the variables have to be freed manually,
-the programmer has full control over the lifetime of a variable on the heap, and
-it can be used for variables that are needed outside the scope of a single
-function. Furthermore, the heap has a virtually infinite amount of space, and is
-generally also used for very big memory allocations. However, due to this big
-flexibility, the handling of heap memory is also quite error-prone, by forgetting
-to free allocated memory or allocating a chunk of the wrong size of the heap and
-trying to access memory outside the allocated part.
-\philipp{Give a concrete example that heap bugs in Android apps are dangerous and 
-may be exploited: https://www.exploit-db.com/docs/48632}
-
-Due to the ability to resize the heap variables and their flexible lifetime, the
-heap cannot simply allocate contiguous chunks of memory in the order that variables
-were allocated, as there would have to be a lot of moving when variables were
-resized and there would be a lot of space lost when some chunks in the middle of
-the heap were freed. Instead, there is a lot of bookkeeping done around which
-chunks of memory are allocated, which are free and the heap allocator tries to
-decide in a smart way which chunks to allocate when and where to get as much
-performance as possible.
-
-While the general concepts of these memory types are universal for the C language,
-there are some differences in the concrete implementation, especially of the heap
-allocator. While most Linux programs use the more standard libc malloc, which is
-well documented and for which tooling exists to investigate the state of the heap,
-android uses its own allocator since Android 11, which is called the Scudo
-hardened allocator.\philipp{Reference to the LLVM Scudo page}
-
-The \emph{GNU Project Debugger} (GDB), is one of the most popular and powerful
-debuggers currently out there, especialy when it comes to C/C++ code. While
-already a very powerful tool on its own, it can be further enhanced with
-plugins using the python API.\@One of these plugins is \emph{GDB Enhanced Features}
-(GEF), which adds more commands and features to GDB, especially popular with
-exploit developers, reverse engineers and also \emph{Capture the Flag} (CTF)
-players. GEF itself has its own plugin system as well, using which it distributes
-some more optional features under the name of gef-extras. Using the system of
-these gef plugins, adding new commands to the gdb console is fairly simple and
-developers can easily mix and match the extra plugins they need.
-
 
 %%%%%%%%%%%%%%%%
 \chapter{Scudo Internals}
@@ -551,7 +479,6 @@ tool on a real android phone, and then that it can help with investigating
 crashes taken from real android apps using native libraries.
 
 \section{Setup on real Android phone}
-\philipp{Find better title}
 
 During the main development process the plugin was tested with the standalone
 version of Scudo compiled with debug symbols from the llvm repository. In
@@ -619,9 +546,6 @@ main  at harness_debug.cpp:247
   \label{fig:SmartbillBT5}
 \end{figure}
 
-
-\philipp{show conretely how you use your plugin's commands to analyze the crashes, 
-alsow with screenshots}
 So from the backtrace the goal was to move back in the stack trace trying to
 pinpoint the error. Therefore the next step was to set a breakpoint somewhere
 in \verb|Clear_OBJECT_IDENTIFIER|, so to find out where in the function the
@@ -718,6 +642,36 @@ program crashing as it tries to free the same chunk twice.
   \caption{State of the chunk at the first break}
   \label{fig:ScudoV3MobilePlusChunkBefore}
 \end{figure}
+
+\subsection{Smartbill Backtrace 13}
+
+This is another crash from the same app as the first crash we analyzed. As we
+once again first check the backtrace, we see that the functions right before the
+crash are not named functions, so to break at the right point we take the offset
+from the nearest named function, giving us a break at \verb|Convert_ASN1_to_X509_TBS_CERT+268-0xfdc|.
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ScudoSmartbillBT13OffendingChunk.png}
+  \caption{State of the chunk at the break}
+  \label{fig:ScudoSmartbillBT13OffendingChunk}
+\end{figure}
+
+As we can see in \autoref{fig:ScudoSmartbillBT13OffendingChunk}, we once again
+try to free an already available chunk. So of course the next thing to verify
+is again the cache of the corresponding class. The chunk command told us that
+its ClassId is 2, so we check the main thread cache for this class, and as we
+can see in \autoref{fig:ScudoSmartbillBT13PerClassAfter}, the chunk is indeed
+in the cache at the last position, so we face most likely a double free bug
+again.
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=.5\linewidth]{figures/ScudoSmartbillBT13PerClassAfter.png}
+  \caption{PerClass of the main thread at the break}
+  \label{fig:ScudoSmartbillBT13PerClassAfter}
+\end{figure}
+
 
 
 %%%%%%%%%%%%%%%%%%%%
