@@ -101,15 +101,6 @@ Android native libraries running on Android 11 (Security patch level 1 January 2
 \chapter{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-%\philipp{Add some sentences here that follow the structure of the abstract. 1: 
-%Heap bugs important. 2: Need dynamic debugging for the heap to understand these bugs. 
-%3: Android uses new and mostly unknown allocator (Scudo, make sure it's spelled 
-%consistently)
-%And then you can add the text below}
-%\philipp{Give a concrete example that heap bugs in Android apps are dangerous and 
-%may be exploited: https://www.exploit-db.com/docs/48632}
-%\philipp{When first talking about Scudo add a reference to the LLVM Scudo website}
-
 Bugs related to heap memory are one of the most frequent problems encountered
 by C developers, since in bigger projects it can very quickly get hard to track
 all the resources that are open and which were already closed. It is very tedious
@@ -161,7 +152,7 @@ Since \textit{Androlib} uses gdb and gef for it's triaging setup, we implement o
 that can be easily loaded into gdb with gef and adds some commands for inspecting the
 Scudo heap.
  
-We evaluate our tool by triaging three heap-related crashes on a real Android 
+We evaluate our tool by triaging seven heap-related crashes on a real Android 
 device.
 We plan to open source our tool to make it available to the community.
 
@@ -216,14 +207,25 @@ checked each time the header is loaded.
 
 \section{Primary Allocator}
 
-\philipp{Kannst du auch noch kurz erwähnen das die primary Chunks alle in 
-verschiedenen Memory Regionen sind, grosser Unterschied zu Standard libc heap 
-wo der Heap eine einzige Region ist, auch ein Bild dazu}
-
 The primary allocator structures the heap into Classes (also named Regions), the
 amount of which depend on the configuration. These classes are identified by a
 ClassId, starting from 1. The ClassId 0 is reserved for allocating the internal
 structures used by Scudo to keep track of the free chunks.
+Each of the classes gets its own region in memory where it can allocate chunks,
+giving some separation between chunks of different classes, unlike the standard
+libc heap allocator, where the heap is a single big region in memory. This can
+also be seen in \autoref{fig:ScudoPrimaryRegionsOverview}, where we see that
+each class/region has its own beginning address, and also tracks its own mapped
+and allocated space.
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ScudoPrimaryRegionsOverview.png}
+  \caption{Example of the division of classes/regions by using the developed plugin}
+  \label{fig:ScudoPrimaryRegionsOverview}
+\end{figure}
+
+
 The classes have a given size of the chunks that can be allocated in that class,
 which increases with the ClassId, with the exact numbers depending again on the
 configuration. An excerpt of the class sizes on Android 11 can be seen in
@@ -529,80 +531,35 @@ different structures.
 
 \section{Crash Triage}
 
+\subsection{Overview}
 In order to evaluate the actual functioning of the plugin, it was tested with
 some of the crashes found in the \textit{Androlib} fuzzing campaign. 
-The starting of the corresponding
-apps and causing the crashes was already set up automatically, opening gdb
-before starting to run the program in order to allow for the setting of any
-breakpoints if needed.
-
-\subsection{Smartbill Backtrace 5}
-
-One of the crashes analysed to test if the plugin could be used for real
-debugging work was in the app \verb|com.skt.smartbill|, the backtrace numbered
-BT5 in the provided documents. In order to analyse the crash, the first thing
-done was to just let the whole crash run in order to get a backtrace of what
-had caused the crash, which can be seen in \autoref{fig:SmartbillBT5}
-(shortened for readability).
+The starting of the corresponding apps and causing the crashes was already
+set up automatically, including opening gdb before starting to run the program
+in order to allow for the setting of any breakpoints if needed. In
+\autoref{fig:ScudoTriageOverview} we can see an overview of the crashes analyzed.
+We will show two detailed case studies and how the plugin and some specific
+commands helped in analyzing them in the next section.
 
 \begin{figure}[h!]
   \centering
-\begin{verbatim}
-abort  from libc.so
-scudo::die () from libc.so
-scudo::ScopedErrorReport::~ScopedErrorReport () from libc.so
-scudo::reportMisalignedPointer () from libc.so
-scudo::Allocator<scudo::AndroidConfig, &>::deallocate () from libc.so
-Clear_OBJECT_IDENTIFIER  from libUbikeyJni.so
-Delete_OBJECT_IDENTIFIER  from libUbikeyJni.so
-Convert_ASN1_to_X509_NAME  from libUbikeyJni.so
-??  from libUbikeyJni.so
-Convert_ASN1_to_X509_TBS_CERT  from libUbikeyJni.so
-Convert_ASN1_to_X509_CERT  from libUbikeyJni.so
-CERT_Load  from libUbikeyJni.so
-Java_com_ubikey_jni_UbikeyJni_jGetUser  from libUbikeyJni.so
-main  at harness_debug.cpp:247
-\end{verbatim}
-  \caption{Backtrace 5 of Smartbill app crashes}
-  \label{fig:SmartbillBT5}
+  \begin{tabular}{lll}
+    \textbf{Package name}                     & \textbf{Crash \# from Androlib} & \textbf{Crash reason} \\
+    com.skt.smartbill                         & BT5                             & invalid free           \\
+    & BT7                             & double free           \\
+    & BT13                            & double free           \\
+    heartratemonitor.heartrate.pulse.pulseapp & BT1                             & header corruption     \\
+    com.ahnlab.v3mobileplus                   & BT1                             & double free           \\
+    com.kbankwith.smartbank                   & BT2                             & double free           \\
+    & BT3                             & invalid free         
+\end{tabular}
+  \caption{Overview of the crashes triaged}
+  \label{fig:ScudoTriageOverview}
 \end{figure}
 
-So from the backtrace the goal was to move back in the stack trace trying to
-pinpoint the error. Therefore, the next step was to set a breakpoint somewhere
-in \verb|Clear_OBJECT_IDENTIFIER|, so to find out where in the function the
-crash happened, the frame can be moved up with \verb|f 5| to go to the frame
-of \verb|Clear_OBJECT_IDENTIFIER|. Then using \verb|x/10i $pc-0x10|, the
-context around where the crash happened can be discovered, and gdb helpfully
-shows the line offset from the start of the function, in this case 44.
-Therefore, when restarting the crash again, we now set a breakpoint with
-\verb|b *Clear_OBJECT_IDENTIFIER+44|, and then continue running the program
-with \verb|c|. While this now lets us stop right before the problematic call
-to \verb|free()|, the inconvenient is that there are plenty of other calls to
-\verb|Clear_OBJECT_IDENTIFIER| before the one causing the crash. However, by
-using the plugin to inspect the chunk that is about to be freed with
-\verb|scudo chunk $x0|, it is very easily visible that at the first two breaks,
-the chunks passed to free are correctly allocated. Once the execution arrives
-at the third break though, the address passed to free is a garbage address,
-that is not even valid.
-While this could also have been identified without the plugin, by going even
-higher in the backtrace stack, we arrive in the \verb|Convert_ASN1_to_X509_NAME|
-function at offset 488, where we can see with the plugin that we are trying
-to call \verb|Delete_OBJECT_IDENTIFIER| with a chunk that is not allocated.
-So from that point why we already found the reason for the crash, we can
-finalize our investigation by looking at the \verb|disassemble| of that
-function. With some investigation we can figure out where on the stack the
-address of the chunk we're trying to free comes from. So we can restart the
-crash again, this time breaking at the start of \verb|Convert_ASN1_to_X509_NAME|
-and by stepping through the lines of the program while observing the stack,
-we can see with the plugin that the chunk is allocated at some point, but
-that it gets freed before we try to free it again. So the crash is clearly
-a classic double free error, which can also be confirmed by decompiling the
-whole library with Ghidra, where we can see that the object is deleted, but
-the pointer is not set to \verb|NULL|, but the later code checks if the
-pointer is null, and otherwise frees it again, resulting in this double free
-crash.
+\subsection{Case studies}
 
-\subsection{V3MobilePlus Backtrace 1}
+\subsubsection{V3MobilePlus Backtrace 1}
 
 The next crashed analysed is part of \verb|com.ahnlab.v3mobileplus| app,
 numbered backtrace 1 in \textit{Androlib}. Again the first step was to find
@@ -664,7 +621,7 @@ program crashing as it tries to free the same chunk twice.
   \label{fig:ScudoV3MobilePlusChunkBefore}
 \end{figure}
 
-\subsection{Smartbill Backtrace 13}
+\subsubsection{Smartbill Backtrace 13}
 
 This is another crash from the same app as the first crash we analysed. As we
 once again first check the backtrace, we see that the functions right before the
