@@ -173,13 +173,15 @@ than the secondary allocator.
 
 \begin{figure}[h]
   \centering
-  \begin{tabular}{lr}
+  \begin{tabular}{|l|r|}
+    \hline
     ClassId           & 8 bits  \\
     State             & 2 bits  \\
     OriginOrWasZeroed & 2 bits  \\
     SizeOrUnusedBytes & 20 bits \\
     Offset            & 16 bits \\
-    Checksum          & 16 bits
+    Checksum          & 16 bits \\
+    \hline
   \end{tabular}
   \caption{Layout of the Scudo chunk header}
   \label{fig:ScudoChunkHeader}
@@ -233,8 +235,9 @@ configuration. An excerpt of the class sizes on Android 11 can be seen in
 
 \begin{figure}[h!]
   \centering
-  \begin{tabular}{lr}
+  \begin{tabular}{l|r}
     \textbf{ClassId} & \textbf{Size of chunks} \\
+    \hline
     0                & special                 \\
     1                & 0x20                    \\
     2                & 0x30                    \\
@@ -545,11 +548,16 @@ commands helped in analyzing them in the next section.
   \centering
   \begin{tabular}{lll}
     \textbf{Package name}                     & \textbf{Crash \# from Androlib} & \textbf{Crash reason} \\
+    \hline
+    \hline
     com.skt.smartbill                         & BT5                             & invalid free           \\
     & BT7                             & double free           \\
     & BT13                            & double free           \\
+    \hline
     heartratemonitor.heartrate.pulse.pulseapp & BT1                             & header corruption     \\
+    \hline
     com.ahnlab.v3mobileplus                   & BT1                             & double free           \\
+    \hline
     com.kbankwith.smartbank                   & BT2                             & double free           \\
     & BT3                             & invalid free         
 \end{tabular}
