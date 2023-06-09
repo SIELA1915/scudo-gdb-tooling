@@ -54,16 +54,27 @@
 
 \begin{document}
 \maketitle{}
-\dedication{Dedicated to my study companion since Covid-19, my plush bear.}
+\dedication{
+  \begin{raggedleft}
+    If debugging is the process of removing software bugs,\\
+    then programming must be the process of putting them in.\\
+    --- Edsger Dijkstra\\
+  \end{raggedleft}
+  \vspace{4cm}
+  \begin{center}
+    Dedicated to my study companion since Covid-19, my plush bear.
+  \end{center}
+}
 \makededication{}
-\acknowledgments{I thank first and foremost my family for their uncoditional
-  support throughout all of my studies until this point. I also thank my
-  supervisor Philipp for all the tips and the help in writing this project.
-  Thanks to my friends, those who inspired and encouraged me on the path of
-  cyber security, as well as those who helped me relax when I was stressed.
-  Thanks also to the HexHive lab for the opportunity to do this Bachelor
-  Project, and also for providing the template for this report, which is
-  available at \url{https://github.com/hexhive/thesis_template}.}
+\acknowledgments{
+I thank first and foremost my family for their unconditional
+support throughout all of my studies until this point. I also thank my
+supervisor Philipp for all the tips and the help in writing this project.
+Thanks to my friends, those who inspired and encouraged me on the path of
+cybersecurity, as well as those who helped me relax when I was stressed.
+Thanks also to the HexHive lab for the opportunity to do this Bachelor
+Project, and also for providing the template for this report, which is
+available at \url{https://github.com/hexhive/thesis_template}.}
 \makeacks{}
 
 \begin{abstract}
@@ -71,13 +82,13 @@ Heap related memory corruptions are a major concern.
 To understand the cause and impact of such heap bugs,
 developers and analysts rely on tools that allow them to
 dynamically inspect the state of the heap.
-LLVM's Scudo heap implemeantion is a hardened memory allocator that 
+LLVM's Scudo heap implementation is a hardened memory allocator that 
 attempts to prevent exploitation of common heap related bugs.
 Since Android 11, Scudo is used as the main memory allocator for Android apps.
-Due to it's novelty only little documentation exists on how Scudo 
-works internally and no tooling exists to inspect the state of the Scudo heap.
-In this project we analyze the way Scudo manages the heap and
-develop a tool to analyze the state of the Scudo heap at runtime.
+Due to its novelty only little documentation exists on how Scudo 
+works internally, and no tooling exists to inspect the state of the Scudo heap.
+In this project we analyse the way Scudo manages the heap and
+develop a tool to analyse the state of the Scudo heap at runtime.
 We implement our tool as an extras plugin into the popular GEF plugin for GDB.
 We demonstrate that we can leverage our tool to triage heap related bugs in 
 Android native libraries running on Android 11 (Security patch level 1 January 2021).
@@ -103,12 +114,12 @@ Bugs related to heap memory are one of the most frequent problems encountered
 by C developers, since in bigger projects it can very quickly get hard to track
 all the resources that are open and which were already closed. It is very tedious
 to track all of such errors down, and just a single oversight might create a bug
-that opens a huge security vulnerability. Additionally nowadays many apps are so
+that opens a huge security vulnerability. Additionally, nowadays, many apps are so
 complex that they use various third-party libraries to do different tasks, since
 re-implementing everything on your own would be a waste of time. However, one
 hardly has the time to check the whole source code of every library one uses, so
 one has to trust the library developers to have done their work correctly. An
-example of where such trust was the cause of a major vulnerabilty is a remote
+example of where such trust was the cause of a major vulnerability is a remote
 code execution in WhatsApp that was found in 2019, where a simple double free
 in a third-party GIF library allowed an attacker to get arbitrary remote code
 execution.~\cite{whatsappRCE}
@@ -124,17 +135,17 @@ Since Android devices are used daily by millions of users, with many thousands t
 millions of different apps, the attack surface for exploits is huge. That might
 well be one of the reasons that Android uses the new and mostly unknown heap
 allocator called Scudo.~\cite{llvmScudo} Scudo tries to mitigate some of the potential
-vulnerabilites due to heap bugs directly in the allocator, while keeping a high
+vulnerabilities due to heap bugs directly in the allocator, while keeping a high
 performance for memory allocations. However, since it is relatively new, there
 exists only spare documentation of how Scudo functions internally, and there
-are basically no tools to dynamically analyze the Scudo heap.
+are basically no tools to dynamically analyse the Scudo heap.
 
 The \textit{Androlib} project is an ongoing 
 project at the HexHive lab to fuzz Android native libraries.
 As a result of fuzzing campaigns carried out, \textit{Androlib} has discovered a 
 number of crashes in native libraries.
 While it is doable to triage the crashes in some categories, heap-related
-crashes are difficult to anlyze due to the Scudo allocator, as no tooling 
+crashes are difficult to analyse due to the Scudo allocator, as no tooling 
 to inspect the Scudo heap exists.
 
 The goal of this project is therefore to implement a tool that allows to dynamically 
@@ -182,9 +193,9 @@ than the secondary allocator.
 \end{figure}
 
 The chunks allocated by both the primary and the secondary allocator store some
-meta data in a combined header. This header is then stored just in front of the
+metadata in a combined header. This header is then stored just in front of the
 actual content of the chunk, such that it can easily be checked whenever the
-chunk gets acessed. An overview of the contents of this header can be seen
+chunk gets accessed. An overview of the contents of this header can be seen
 in \autoref{fig:ScudoChunkHeader}. The ClassId identifies the class the chunk
 belongs to in case it was allocated by the primary allocator, with a ClassId
 of 0 meaning that the chunk was allocated by the secondary allocator. The
@@ -428,8 +439,8 @@ correct thread. Since the statistics are stored right after the per class array
 in the cache, the plugin then simply subtracts the size of the per class array
 to get the address of the first entry in the class array.
 For that reason the \verb|scudo perclass| command also takes two arguments, the first
-being the thread id and the second being the class id, which uniquely define
-the entry to get. If the ids are omitted a default value of 0 is taken. An
+being the thread ID and the second being the class ID, which uniquely define
+the entry to get. If the IDs are omitted a default value of 0 is taken. An
 example of the output can be seen in \autoref{fig:ScudoPerClassCommand}.
 
 \begin{figure}[h!]
@@ -448,7 +459,7 @@ blocks in the linked list. The command can either be provided by an address
 to read out the corresponding large block, or if the address is omitted it will
 take the first block from the list of blocks in use. An example can be seen in
 \autoref{fig:ScudoLargeBlockCommand}. A \verb|--number X| argument can optionally be
-specified to get once again a list of short infos about that amount of large
+specified to get once again a list of short information about that amount of large
 blocks.
 
 \begin{figure}[h!]
@@ -483,7 +494,7 @@ crashes taken from real android apps using native libraries.
 During the main development process the plugin was tested with the standalone
 version of Scudo compiled with debug symbols from the llvm repository. In
 order to get the plugin loaded by gef, the folder containing the plugin file
-needs to be specified as gef-extras plugin dir. The easiest way to do this
+needs to be specified as gef-extras plugin directory. The easiest way to do this
 is to run \verb|gef config gef.extra_plugins_dir /path/to/plugin/dir|. In order
 to use multiple different gef extra plugins that may be located at different
 paths, multiple paths can be specified separated by semicolons. Also, the
@@ -517,9 +528,9 @@ breakpoints if needed.
 
 \subsection{Smartbill Backtrace 5}
 
-One of the crashes analyzed to test if the plugin could be used for real
+One of the crashes analysed to test if the plugin could be used for real
 debugging work was in the app \verb|com.skt.smartbill|, the backtrace numbered
-BT5 in the provided documents. In order to analyze the crash, the first thing
+BT5 in the provided documents. In order to analyse the crash, the first thing
 done was to just let the whole crash run in order to get a backtrace of what
 had caused the crash, which can be seen in \autoref{fig:SmartbillBT5}
 (shortened for readability).
@@ -547,7 +558,7 @@ main  at harness_debug.cpp:247
 \end{figure}
 
 So from the backtrace the goal was to move back in the stack trace trying to
-pinpoint the error. Therefore the next step was to set a breakpoint somewhere
+pinpoint the error. Therefore, the next step was to set a breakpoint somewhere
 in \verb|Clear_OBJECT_IDENTIFIER|, so to find out where in the function the
 crash happened, the frame can be moved up with \verb|f 5| to go to the frame
 of \verb|Clear_OBJECT_IDENTIFIER|. Then using \verb|x/10i $pc-0x10|, the
@@ -556,7 +567,7 @@ shows the line offset from the start of the function, in this case 44.
 Therefore, when restarting the crash again, we now set a breakpoint with
 \verb|b *Clear_OBJECT_IDENTIFIER+44|, and then continue running the program
 with \verb|c|. While this now lets us stop right before the problematic call
-to \verb|free()|, the inconvient is that there are plenty of other calls to
+to \verb|free()|, the inconvenient is that there are plenty of other calls to
 \verb|Clear_OBJECT_IDENTIFIER| before the one causing the crash. However, by
 using the plugin to inspect the chunk that is about to be freed with
 \verb|scudo chunk $x0|, it is very easily visible that at the first two breaks,
@@ -583,7 +594,7 @@ crash.
 
 \subsection{V3MobilePlus Backtrace 1}
 
-The next crashed analyzed is part of \verb|com.ahnlab.v3mobileplus| app,
+The next crashed analysed is part of \verb|com.ahnlab.v3mobileplus| app,
 numbered backtrace 1 in \textit{Androlib}. Again the first step was to find
 the line in the library right before the crash happened, in order to be able
 to investigate before the crash. So we set a breakpoint at \verb|BIN_Free+28|,
@@ -645,7 +656,7 @@ program crashing as it tries to free the same chunk twice.
 
 \subsection{Smartbill Backtrace 13}
 
-This is another crash from the same app as the first crash we analyzed. As we
+This is another crash from the same app as the first crash we analysed. As we
 once again first check the backtrace, we see that the functions right before the
 crash are not named functions, so to break at the right point we take the offset
 from the nearest named function, giving us a break at \verb|Convert_ASN1_to_X509_TBS_CERT+268-0xfdc|.
@@ -678,36 +689,21 @@ again.
 \chapter{Conclusion}
 %%%%%%%%%%%%%%%%%%%%
 
-In this project we implemented a plugin for GDB/GEF to help analyze and debug
+In this project we implemented a plugin for GDB/GEF to help analyse and debug
 heap related crashes dynamically when the Scudo allocator is used as heap allocator.
 The plugin works on real Android phones as well as on the standalone Scudo
-version and it can easily be loaded inside gef. The commands of the plugin
+version, and it can easily be loaded inside gef. The commands of the plugin
 allow the inspection of the most important structures of Scudo, which can
 be used in investigating real crashes. While the source code of Scudo was
 already openly accessible and there was some documentation about Scudo, there
 was no easy way to investigate crashes related to Scudo dynamically and directly
 on a real phone for real Android apps with native libraries. While the plugin
 handles the most important structures, it also builds a base which could be
-extended to analyze further structures used by Scudo, like quarantine related ones.
+extended to analyse further structures used by Scudo, like quarantine related ones.
 
 \cleardoublepage{}
 \phantomsection{}
 \addcontentsline{toc}{chapter}{Bibliography}
 \printbibliography{}
-
-% Appendices are optional
-% \appendix
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% \chapter{How to make a transmogrifier}
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% In case you ever need an (optional) appendix.
-%
-% You need the following items:
-% \begin{itemize}
-% \item A box
-% \item Crayons
-% \item A self-aware 5-year old
-% \end{itemize}
 
 \end{document}
