@@ -14,6 +14,7 @@
 \usepackage{xspace}
 \usepackage{xcolor}
 \usepackage{listofitems}
+\usepackage{subcaption}
 
 \newif\ifreview
 \reviewtrue
@@ -95,14 +96,44 @@ Android native libraries running on Android 11.\philipp{ANdroid version of Testp
 \chapter{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\philipp{Add some sentences here that follow the structure of the abstract. 1: 
-Heap bugs important. 2: Need dynamic debugging for the heap to understand these bugs. 
-3: Android uses new and mostly unknown allocator (Scudo, make sure it's spelled 
-consistently)
-And then you can add the text below}
-\philipp{Give a concrete example that heap bugs in Android apps are dangerous and 
-may be exploited: https://www.exploit-db.com/docs/48632}
-\philipp{When first talking about Scudo add a reference to the LLVM Scudo website}
+%\philipp{Add some sentences here that follow the structure of the abstract. 1: 
+%Heap bugs important. 2: Need dynamic debugging for the heap to understand these bugs. 
+%3: Android uses new and mostly unknown allocator (Scudo, make sure it's spelled 
+%consistently)
+%And then you can add the text below}
+%\philipp{Give a concrete example that heap bugs in Android apps are dangerous and 
+%may be exploited: https://www.exploit-db.com/docs/48632}
+%\philipp{When first talking about Scudo add a reference to the LLVM Scudo website}
+
+Bugs related to heap memory are one of the most frequent problems encountered
+by C developers, since in bigger projects it can very quickly get hard to track
+all the resources that are open and which were already closed. It is very tedious
+to track all of such errors down, and just a single oversight might create a bug
+that opens a huge security vulnerability. Additionally nowadays many apps are so
+complex that they use various third-party libraries to do different tasks, since
+re-implementing everything on your own would be a waste of time. However, one
+hardly has the time to check the whole source code of every library one uses, so
+one has to trust the library developers to have done their work correctly. An
+example of where such trust was the cause of a major vulnerabilty is a remote
+code execution in WhatsApp that was found in 2019, where a simple double free
+in a third-party GIF library allowed an attacker to get arbitrary remote code
+execution.~\cite{whatsappRCE}
+
+Since checking all the code of all third-party libraries is practically not
+feasible, it is important to be able to debug heap bugs when they are found, in
+order to understand how they happen, the consequences an exploit using the
+bug might have, and to be able to fix the bug rapidly. In order to encourage
+and assist developers in this process, there needs to be some freely available
+tools that make dynamic debugging of the heap easier.
+
+Since Android devices are used daily by millions of users, with many thousands to
+millions of different apps, the attack surface for exploits is huge. That might
+well be one of the reasons that Android uses the new and mostly unknown heap
+allocator called Scudo.~\cite{llvmScudo} Scudo tries to mitigate some of the potential
+vulnerabilites due to heap bugs directly in the allocator, while keeping a high
+performance for memory allocations. However, since it is relatively new, there
+exists only spare documentation of how Scudo functions internally, and there
+are basically no tools to dynamically analyze the Scudo heap.
 
 The \textit{Androlib} project is an ongoing 
 project at the HexHive lab to fuzz Android native libraries.
@@ -117,8 +148,8 @@ inspect the Scudo heap.
 One of the main challenges is 
 to understand the Scudo allocator internals and then to
 create appropriate tooling to help with the analysing of those crashes.
-While there is a bit of documentation around scudo, there is not really a
-comprehensive overview of all detailed inner workings of scudo, and no 
+While there is a bit of documentation around Scudo, there is not really a
+comprehensive overview of all detailed inner workings of Scudo, and no 
 tools tailored for debugging crashes related to Scudo.
 
 Since \textit{Androlib} uses gdb and gef for it's triaging setup, we implement our tool as a gef-extras plugin, 
@@ -133,7 +164,7 @@ We plan to open source our tool to make it available to the community.
 \chapter{Background}
 %%%%%%%%%%%%%%%%%%%%
 
-\philipp{you can probably remove this   and focus on improving the scudo internals section}
+\philipp{you can probably remove this   and focus on improving the Scudo internals section}
 
 Most standard android apps are written in Java, which is the main development
 language for writing android apps. However, for more advanced uses there exists
@@ -180,7 +211,7 @@ While the general concepts of these memory types are universal for the C languag
 there are some differences in the concrete implementation, especially of the heap
 allocator. While most Linux programs use the more standard libc malloc, which is
 well documented and for which tooling exists to investigate the state of the heap,
-android uses its own allocator since Android 11, which is called the scudo
+android uses its own allocator since Android 11, which is called the Scudo
 hardened allocator.\philipp{Reference to the LLVM Scudo page}
 
 The \emph{GNU Project Debugger} (GDB), is one of the most popular and powerful
@@ -199,53 +230,81 @@ developers can easily mix and match the extra plugins they need.
 \chapter{Scudo Internals}
 %%%%%%%%%%%%%%%%
 
-\philipp{Add a figure that shows the detailed structure of the header}
-
-The scudo hardened allocator divides the heap allocations it is asked to do into
+The Scudo hardened allocator divides the heap allocations it is asked to do into
 two big types of allocations, based on the size of the chunk to be allocated.
-The smaller chunks are handled by the primary allocator inside scudo, which is
+The smaller chunks are handled by the primary allocator inside Scudo, which is
 designed to optimize performance as much as possible by adapting to finer grained
 size differences between these smaller chunks. All the big chunks are handled by
 the secondary allocator, which is less optimized, since the most frequent chunks
 are the small ones and thus the primary allocator has a bigger impact on performance
 than the secondary allocator.
 
-\philipp{when you talk about metadata please not where that metadata ends up 
-being stored}
+\begin{figure}[h!]
+  \centering
+  \begin{tabular}{lr}
+    ClassId           & 8 bits  \\
+    State             & 2 bits  \\
+    OriginOrWasZeroed & 2 bits  \\
+    SizeOrUnusedBytes & 20 bits \\
+    Offset            & 16 bits \\
+    Checksum          & 16 bits
+  \end{tabular}
+  \caption{Layout of the Scudo chunk header}
+  \label{fig:ScudoChunkHeader}
+\end{figure}
 
-The chunks allocated by both the primary and the secondary allocator are prepended
-by the same header, which holds some information about that chunk. This combined
-header contains the ClassId, which identifies the class the chunk belongs to if
-it was allocated by the primary allocator, with a ClassId of 0 meaning that the
-chunk was allocated by the secondary allocator. The header also contains information
-about the state of the chunk, which can be allocated, quarantined or available, as
-well as the origin of the allocation, e.g., malloc or new, which can be used to
-detect errors when the type of deallocation does not match the type of the
-allocation. Furthermore, the header includes the size for the primary chunks or
-the amount of unused bytes for the secondary chunks and an offset, which is the
-distance from the beginning of the returned chunk to the beginning of the actual
-backend allocation. Finally, the header contains a checksum, which is generated
-using a cookie (a random number generated during the initialization of the
-allocator), the heap address of the chunk, and the actual content of the header.
-This checksum is used for guarding against programming errors as well as attackers,
-and it is checked each time the header is loaded.
+The chunks allocated by both the primary and the secondary allocator store some
+meta data in a combined header. This header is then stored just in front of the
+actual content of the chunk, such that it can easily be checked whenever the
+chunk gets acessed. An overview of the contents of this header can be seen
+in \autoref{fig:ScudoChunkHeader}. The ClassId identifies the class the chunk
+belongs to in case it was allocated by the primary allocator, with a ClassId
+of 0 meaning that the chunk was allocated by the secondary allocator. The
+header also contains information about the state of the chunk, which can be
+allocated, quarantined or available, as well as the origin of the allocation,
+e.g., malloc or new, which can be used to detect errors when the type of
+deallocation does not match the type of the allocation. Furthermore, the
+header includes the size for the primary chunks or the amount of unused bytes
+for the secondary chunks and an offset, which is the distance from the beginning
+of the returned chunk to the beginning of the actual backend allocation.
+Finally, the header contains a checksum, which is generated using a cookie (a
+random number generated during the initialization of the allocator), the heap
+address of the chunk, and the actual content of the header. This checksum is
+used for guarding against programming errors as well as attackers, and it is
+checked each time the header is loaded.
 
 The primary allocator structures the heap into Classes (also named Regions), the
 amount of which depend on the configuration. These classes are identified by a
-ClassId, starting from 0. The first class, with ClassId 0, is however a special
-class, that works differently than the other classes. \philipp{that's used for 
-the secondary chunk?, I would just say that the primary class ids start from 1}
-The other classes have a
-given size of the chunks that can be allocated in that class, which increases
-with the ClassId, with the exact numbers depending again on the configuration.
-\philipp{Figure to illustrate primary chunk memory regions and the classes on 
-Android}
+ClassId, starting from 1. The ClassId 0 is reserved for allocating the internal
+structures used by Scudo to keep track of the free chunks.
+The classes have a given size of the chunks that can be allocated in that class,
+which increases with the ClassId, with the exact numbers depending again on the
+configuration. An excerpt of the class sizes on Android 11 can be seen in
+\autoref{fig:ScudoAndroidClasses}.
+
+\begin{figure}[h!]
+  \centering
+  \begin{tabular}{lr}
+    \textbf{ClassId} & \textbf{Size of chunks} \\
+    0                & special                 \\
+    1                & 0x20                    \\
+    2                & 0x30                    \\
+    3                & 0x40                    \\
+    4                & 0x50                    \\
+    ...              & ...                     \\
+    36               & 0x30010                 \\
+    37               & 0x38010                 \\
+    38               & 0x40010                
+  \end{tabular}
+  \caption{Sizes of the classes on Android 11}
+  \label{fig:ScudoAndroidClasses}
+\end{figure}
+
 So the chunk that is actually returned by the primary allocator might be bigger
 than what was asked for, but this helps against having to do expensive bookkeeping
 to avoid fragmentation inside the classes.
-\philipp{This section would be greatly improved with figures, here I would add 
-an image to illustrate how the free list in the primary allocator works}
-So when an allocation request is made to scudo, and it is small enough to fit into
+
+So when an allocation request is made to Scudo, and it is small enough to fit into
 one of the primary allocator regions, then the primary allocator first finds the
 smallest class that still contains chunks big enough for the requested size. It
 then checks in the cache associated to that class, to find a chunk that is already
@@ -270,9 +329,28 @@ class, instead when a freelist for one of the classes needs to be refilled
 with new TransferBatches, these are allocated in this first class, and they
 are freed when they are moved to the cache of the class.
 
-Additionally, while not yet present in the version of scudo shipped with Android
-11, the latest scudo version includes a type that regroups multiple transfer
-batches, into a BatchGroup. Instead of the freelist for a given class containing
+\begin{figure}[h!]
+  \centering
+  \begin{subfigure}{.5\textwidth}
+    \centering
+    \includegraphics[width=.9\linewidth]{figures/ScudoPrimaryFreelistLatest.png}
+    \caption{Latest version}
+    \label{fig:ScudoPrimaryFreelistLatest}
+  \end{subfigure}%
+  \begin{subfigure}{.5\textwidth}
+    \centering
+    \includegraphics[width=.9\linewidth]{figures/ScudoPrimaryFreelistAndroid.png}
+    \caption{Version shipped with Android 11}
+    \label{fig:ScudoPrimaryFreelistAndroid}
+  \end{subfigure}
+  \caption{Layout of the freelist for each of the classes}
+  \label{fig:ScudoPrimaryFreelist}
+\end{figure}
+
+Additionally, while not yet present in the version of Scudo shipped with Android
+11, the latest Scudo version includes a type that regroups multiple transfer
+batches, into a BatchGroup, as illustrated in \autoref{fig:ScudoPrimaryFreelistLatest}.
+Instead of the freelist for a given class containing
 a list of transfer batches, it now has a list of batch groups, which contain
 a list of transfer batches each. The overall functionality of the allocator
 doesn't change however, the change is just supposed to get even more performance
@@ -289,21 +367,17 @@ For bookkeeping, the secondary allocator simply keeps a doubly linked list of
 all chunks currently in use and keeps track of the details of each allocated
 chunk in a special header that is prepended to the combined header.
 
-\philipp{*optional* talk about quarantine}
-
 %%%%%%%%%%%%%%%%%%%%%%%%
 \chapter{Implementation}
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-\philipp{Great:)}
-
 The structure of the gef-extras plugin is heavily inspired by the existing
 structure of the tooling for the standard libc heap allocator used in most
-Linux systems, which is included in the gef plugin \philipp{cite} for gdb. The scudo plugin
-therefore offers multiple commands for the different structures present in
-scudo. These commands take generally some address to a memory region, and
-create an object by reading out the data from that memory address and parsing
-it according to the predefined structure.
+Linux systems, which is included in the gef plugin for gdb.~\cite{gef} The
+Scudo plugin therefore offers multiple commands for the different structures
+present in Scudo. These commands take generally some address to a memory
+region, and create an object by reading out the data from that memory address
+and parsing it according to the predefined structure.
 
 The most basic command is the \verb|scudo chunk| command, which given the address
 of a chunk on the heap, reads the header in front of the chunk and displays
@@ -314,26 +388,26 @@ In the actual implementation, a chunk is represented as a class, and like in
 gef, the different information is stored as properties of the class. Similarly,
 the data is read from memory using the \verb|gef.memory.read| function, and then
 structured as a type using the ctypes library to represent the different types
-used in scudo. The \verb|str| method on the class is implemented to display a short
+used in Scudo. The \verb|str| method on the class is implemented to display a short
 summary of the most essential info, while the \verb|psprint| method shows the
 extended information display, as shown in \autoref{fig:ScudoChunkCommand}.
 
 \begin{figure}[h!]
   \centering
   \includegraphics[width=\linewidth]{figures/ScudoChunkCommand.png}
-  \caption{Example of the scudo chunk command in gef}
+  \caption{Example of the Scudo chunk command in gef}
   \label{fig:ScudoChunkCommand}
 \end{figure}
 
 The next two commands concern the region info, with respectively the
 \verb|scudo region| and \verb|scudo regions| commands. Both of work with the same
-\verb|ScudoRegionInfo| class, which is defined like the scudo chunk with a ctypes
-structure to represent the types in the scudo c code, and with properties for
+\verb|ScudoRegionInfo| class, which is defined like the Scudo chunk with a ctypes
+structure to represent the types in the Scudo c code, and with properties for
 all the information extracted. The one special thing about the region info
-class is the padding, since the structure is padded to the scudo cache line
+class is the padding, since the structure is padded to the Scudo cache line
 size for faster access. So the plugin first builds an unpadded version of the
 ctypes structure, and then adds the required padding to get a multiple of the
-scudo cache line size to the structure to get the final version.
+Scudo cache line size to the structure to get the final version.
 
 The info included in the RegionInfo structure includes the list of transfer
 batches for that region, the number of popped and pushed blocks, the amount
@@ -351,7 +425,7 @@ about each region, as seen in \autoref{fig:ScudoRegionsCommand}.
 \begin{figure}[h!]
   \centering
   \includegraphics[width=\linewidth]{figures/ScudoRegionsCommand.png}
-  \caption{Example of the scudo regions command in gef}
+  \caption{Example of the Scudo regions command in gef}
   \label{fig:ScudoRegionsCommand}
 \end{figure}
 
@@ -365,7 +439,7 @@ special region which holds the transfer batches.
 \begin{figure}[h!]
   \centering
   \includegraphics[width=\linewidth]{figures/ScudoRegionCommand.png}
-  \caption{Example of the scudo region command in gef}
+  \caption{Example of the Scudo region command in gef}
   \label{fig:ScudoRegionCommand}
 \end{figure}
 
@@ -389,7 +463,7 @@ specified by address.
 \begin{figure}[h!]
   \centering
   \includegraphics[width=\linewidth]{figures/ScudoBatchGroupCommand.png}
-  \caption{Example of the scudo batch group command in gef}
+  \caption{Example of the Scudo batch group command in gef}
   \label{fig:ScudoBatchGroupCommand}
 \end{figure}
 
@@ -402,7 +476,7 @@ specified in the same way to get an overview of that number of transfer batches.
 \begin{figure}[h!]
   \centering
   \includegraphics{figures/ScudoTransferBatchCommand.png}
-  \caption{Example of the scudo transfer batch command in gef}
+  \caption{Example of the Scudo transfer batch command in gef}
   \label{fig:ScudoTransferBatchCommand}
 \end{figure}
 
@@ -411,13 +485,13 @@ primary allocator tries to look for free chunks to allocate for the user.
 While again the content of each per class structure is fairly simple with a
 list of the chunks it contains and the maximal number of chunks it can contain,
 there was a particular challenge about implementing this command, which was to
-find the location of the actual array. Since scudo was designed for multi
+find the location of the actual array. Since Scudo was designed for multi
 threading, there actually exists a cache for each thread, and as such the per
 class array of each thread is not simply stored at an offset from the Allocator
 symbol. However, there luckily is a trick to find the different per class arrays
 of the different threads, as the cache of each thread contains some statistics
 about the allocated and free blocks in that cache. In order to have some global
-statistics over all the different threads, scudo stores some global stats, that
+statistics over all the different threads, Scudo stores some global stats, that
 include a linked list of all the local stats of the different threads. So in
 order to get the address of the per class array of a thread, the plugin gets
 the linked list of statistics from its offset to the Allocator symbol and then
@@ -433,13 +507,13 @@ example of the output can be seen in \autoref{fig:ScudoPerClassCommand}.
 \begin{figure}[h!]
   \centering
   \includegraphics{figures/ScudoPerClassCommand.png}
-  \caption{Example of the scudo per class command in gef}
+  \caption{Example of the Scudo per class command in gef}
   \label{fig:ScudoPerClassCommand}
 \end{figure}
 
 The last command is the only one concerning the secondary allocator specifically,
 and it reads out the special header that is prepended to the normal chunk header
-for any secondary chunk. The normal scudo chunk command still works for secondary
+for any secondary chunk. The normal Scudo chunk command still works for secondary
 chunks as well though. The large block command gives information about the
 commit and map base addresses and sizes, as well as the next and previous large
 blocks in the linked list. The command can either be provided by an address
@@ -452,17 +526,17 @@ blocks.
 \begin{figure}[h!]
   \centering
   \includegraphics{figures/ScudoLargeBlockCommand.png}
-  \caption{Example of the scudo large block command in gef}
+  \caption{Example of the Scudo large block command in gef}
   \label{fig:ScudoLargeBlockCommand}
 \end{figure}
 
 While the whole plugin is contained in a single file to follow the gef standard,
 the organization with classes and using the ctypes structures allows for a
 flexibility in adapting and evolving the plugin. As such it would be quite
-easy to adapt the plugin for any minor changes in the scudo structure should
-it evolve in the future, or adapted to support older versions of scudo, with
-one such version already being implemented for the version of scudo that was
-shipped with Android 11. The main changes for this older version of scudo
+easy to adapt the plugin for any minor changes in the Scudo structure should
+it evolve in the future, or adapted to support older versions of Scudo, with
+one such version already being implemented for the version of Scudo that was
+shipped with Android 11. The main changes for this older version of Scudo
 included that the batch groups did not exist yet, some minor reordering of
 some fields in some of the structures, which also caused some of the offsets
 from the Allocator symbol to be changed.
@@ -472,14 +546,15 @@ from the Allocator symbol to be changed.
 \chapter{Evaluation}
 %%%%%%%%%%%%%%%%%%%%
 
-\philipp{Add a sentence here explaining what you want to show when evaluating 
-your tool.}
+To evaluate our tool, we first want to show that we can install and use the
+tool on a real android phone, and then that it can help with investigating
+crashes taken from real android apps using native libraries.
 
-\section{Real Device}
+\section{Setup on real Android phone}
 \philipp{Find better title}
 
 During the main development process the plugin was tested with the standalone
-version of scudo compiled with debug symbols from the llvm repository. In
+version of Scudo compiled with debug symbols from the llvm repository. In
 order to get the plugin loaded by gef, the folder containing the plugin file
 needs to be specified as gef-extras plugin dir. The easiest way to do this
 is to run \verb|gef config gef.extra_plugins_dir /path/to/plugin/dir|. In order
@@ -492,22 +567,12 @@ Since the main development was done on the standalone version, the first step
 to evaluate the plugin was to actually test it on a real android phone. The
 test device was a Samsung Galaxy S10, which was already rooted using Magisk
 and had gdb and gef installed using the Termux app. Access to the phones
-console and copying of the plugin to the phone was done using adb. In order
-to do the evaluation directly using WSL from a Windows workstation, the
-usbipd driver was used to pass the phone connected using USB to WSL. Without
-going into detail, the commands for attaching the phone to WSL to be entered
-in an Administrator Command Prompt are the following, replacing X-X with the
-busid shown in the first command for the android phone:
-\begin{verbatim}
-usbipd wsl list
-usbipd wsl attach --busid X-X
-\end{verbatim}
-\philipp{I would omit the WSL specific stuff}
+console and copying of the plugin to the phone was done using adb.
 
 While the plugin installation and loading worked without problem on the phone, it
 rapidly became evident that the plugin did not work as intended and instead
 returned some random looking numbers for most commands. So after some
-investigation, it was discovered that the scudo version shipped with Android
+investigation, it was discovered that the Scudo version shipped with Android
 11, which was installed on the testing device, differed in multiple points
 from the most recent version on the llvm repository. The plugin was therefore
 copied and adapted into a version for Android 11, which notably does not
@@ -529,10 +594,11 @@ One of the crashes analyzed to test if the plugin could be used for real
 debugging work was in the app \verb|com.skt.smartbill|, the backtrace numbered
 BT5 in the provided documents. In order to analyze the crash, the first thing
 done was to just let the whole crash run in order to get a backtrace of what
-had caused the crash, which looked like this (shortened for readability):
+had caused the crash, which can be seen in \autoref{fig:SmartbillBT5}
+(shortened for readability).
 
-\philipp{Enclose the code in a figure}
-
+\begin{figure}[h!]
+  \centering
 \begin{verbatim}
 abort  from libc.so
 scudo::die () from libc.so
@@ -549,6 +615,10 @@ CERT_Load  from libUbikeyJni.so
 Java_com_ubikey_jni_UbikeyJni_jGetUser  from libUbikeyJni.so
 main  at harness_debug.cpp:247
 \end{verbatim}
+  \caption{Backtrace 5 of Smartbill app crashes}
+  \label{fig:SmartbillBT5}
+\end{figure}
+
 
 \philipp{show conretely how you use your plugin's commands to analyze the crashes, 
 alsow with screenshots}
@@ -587,42 +657,84 @@ the pointer is not set to \verb|NULL|, but the later code checks if the
 pointer is null, and otherwise frees it again, resulting in this double free
 crash.
 
+\subsection{V3MobilePlus Backtrace 1}
 
-%%%%%%%%%%%%%%%%%%%%%%
-\chapter{Related Work}
-%%%%%%%%%%%%%%%%%%%%%%
+The next crashed analyzed is part of \verb|com.ahnlab.v3mobileplus| app,
+numbered backtrace 1 in \textit{Androlib}. Again the first step was to find
+the line in the library right before the crash happened, in order to be able
+to investigate before the crash. So we set a breakpoint at \verb|BIN_Free+28|,
+and after continuing over the breakpoint three times we are right before the
+call to \verb|free| that causes the crash.
 
-\philipp{since we're running a bit short on time I would not invest any work here 
-and just cut this chapter, focus on making the other chapters better.
-}
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ScudoV3MobilePlusOffendingChunk.png}
+  \caption{Chunk header that causes a crash when freed}
+  \label{fig:ScudoV3MobilePlusOffendingChunk}
+\end{figure}
 
-Mention some of the links as provided for the beginning of the project.
+First we check the most simple thing, the header of the chunk that is about
+to be freed. As can be seen in \autoref{fig:ScudoV3MobilePlusOffendingChunk},
+there seems to indeed be a problem with the chunk, since it is already marked
+as available, but the program wants to free it. So either it tries to free a
+chunk it has already freed, or it tries to free a chunk it actually never
+allocated. In order to investigate a bit further, we can check the first place
+the chunk would have been put if it was previously allocated and freed, in the
+cache's PerClass. Since the chunk has only a size of 9, we know it resides in
+the first class, with ClassId 1. The output of checking this PerClass info can
+be seen in \autoref{fig:ScudoV3MobilePlusPerClassAfter}.
 
-The related work section covers closely related work. Here you can highlight
-the related work, how it solved the problem, and why it solved a different
-problem. Do not play down the importance of related work, all of these
-systems have been published and evaluated! Say what is different and how
-you overcome some of the weaknesses of related work by discussing the 
-trade-offs. Stay positive!
+\begin{figure}[h!]
+\centering
+\begin{minipage}{.5\textwidth}
+  \centering
+  \includegraphics[width=.95\linewidth]{figures/ScudoV3MobilePlusPerClassAfter.png}
+  \captionof{figure}{PerClass right before the crash}
+  \label{fig:ScudoV3MobilePlusPerClassAfter}
+\end{minipage}%
+\begin{minipage}{.5\textwidth}
+  \centering
+  \includegraphics[width=.95\linewidth]{figures/ScudoV3MobilePlusPerClassBefore.png}
+  \captionof{figure}{PerClass at the first break}
+  \label{fig:ScudoV3MobilePlusPerClassBefore}
+\end{minipage}
+\end{figure}
 
-This section is usually 3–5 pages.
+With this output, we can check if the chunk at address \verb|0x7d5daca2b0| is
+present in the cache, and indeed we see the address \verb|0x7d5daca2a0|, which
+corresponds to the address of that chunk including the header. Since it is
+present towards the end of the list of chunks in the cache, this is most likely
+the case of a double free, where the chunk was already freed earlier in the app.
+Indeed, by running through the crash again, we can see that at the first break at
+\verb|BIN_Free+28|, the cache doesn't contain the offending chunk yet, as can be
+seen in \autoref{fig:ScudoV3MobilePlusPerClassBefore}. Also by actually looking
+at the chunk that is to be freed at this first break (\autoref{fig:ScudoV3MobilePlusChunkBefore}),
+we see that it is the same chunk we try to free again later, resulting in the
+program crashing as it tries to free the same chunk twice.
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ScudoV3MobilePlusChunkBefore.png}
+  \caption{State of the chunk at the first break}
+  \label{fig:ScudoV3MobilePlusChunkBefore}
+\end{figure}
 
 
 %%%%%%%%%%%%%%%%%%%%
 \chapter{Conclusion}
 %%%%%%%%%%%%%%%%%%%%
 
-\philipp{Add a sentence like: In this project we implemented a plugin ... }
-The plugin works on real Android phones as well as on the standalone scudo
+In this project we implemented a plugin for GDB/GEF to help analyze and debug
+heap related crashes dynamically when the Scudo allocator is used as heap allocator.
+The plugin works on real Android phones as well as on the standalone Scudo
 version and it can easily be loaded inside gef. The commands of the plugin
-allow the inspection of the most important structures of scudo, which can
-be used in investigating real crashes. While the source code of scudo was
-already openly accessible and there is a bit of documentation
-about scudo, there was no easy way to investigate crashes \philipp{dynamically \& on real phone} 
-related to scudo on
-real Android apps with native libraries. While the plugin handles the most
-important structures, it also builds a base which could be extended to
-analyze further structures used by scudo, like quarantine related ones.
+allow the inspection of the most important structures of Scudo, which can
+be used in investigating real crashes. While the source code of Scudo was
+already openly accessible and there was some documentation about Scudo, there
+was no easy way to investigate crashes related to Scudo dynamically and directly
+on a real phone for real Android apps with native libraries. While the plugin
+handles the most important structures, it also builds a base which could be
+extended to analyze further structures used by Scudo, like quarantine related ones.
 
 \cleardoublepage{}
 \phantomsection{}
