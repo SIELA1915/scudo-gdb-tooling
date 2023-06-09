@@ -138,7 +138,7 @@ allocator called Scudo.~\cite{llvmScudo} Scudo tries to mitigate some of the pot
 vulnerabilities due to heap bugs directly in the allocator, while keeping a high
 performance for memory allocations. However, since it is relatively new, there
 exists only spare documentation of how Scudo functions internally, and there
-are basically no tools to dynamically analyse the Scudo heap.
+are no tools to dynamically analyze the Scudo heap.
 
 The \textit{Androlib} project is an ongoing 
 project at the HexHive lab to fuzz Android native libraries.
@@ -178,7 +178,9 @@ the secondary allocator, which is less optimized, since the most frequent chunks
 are the small ones and thus the primary allocator has a bigger impact on performance
 than the secondary allocator.
 
-\begin{figure}[h!]
+\section{Chunk Header}
+
+\begin{figure}[h]
   \centering
   \begin{tabular}{lr}
     ClassId           & 8 bits  \\
@@ -211,6 +213,12 @@ random number generated during the initialization of the allocator), the heap
 address of the chunk, and the actual content of the header. This checksum is
 used for guarding against programming errors as well as attackers, and it is
 checked each time the header is loaded.
+
+\section{Primary Allocator}
+
+\philipp{Kannst du auch noch kurz erwähnen das die primary Chunks alle in 
+verschiedenen Memory Regionen sind, grosser Unterschied zu Standard libc heap 
+wo der Heap eine einzige Region ist, auch ein Bild dazu}
 
 The primary allocator structures the heap into Classes (also named Regions), the
 amount of which depend on the configuration. These classes are identified by a
@@ -294,6 +302,8 @@ a list of transfer batches, it now has a list of batch groups, which contain
 a list of transfer batches each. The overall functionality of the allocator
 doesn't change however, the change is just supposed to get even more performance
 for the frequent allocations of the primary allocator.
+
+\section{Secondary Allocator}
 
 The secondary allocator is a bit less sophisticated, since it does not need to
 be able to do as many allocations and deallocations as the primary allocator,
